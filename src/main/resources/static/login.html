@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in &mdash; DEMO ERP</title>
+  <link rel="icon" href="/favicon.ico">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="login-body">
+  <div class="login-lang">
+    <button type="button" class="btn btn-outline-secondary btn-sm" id="loginLang">العربية</button>
+  </div>
+  <div class="login-card">
+    <div class="card shadow-lg border-0">
+      <div class="card-body">
+        <div class="login-logo">E</div>
+        <h1 class="h4 text-center fw-bold mb-1">Welcome back</h1>
+        <p class="text-center muted fs-13 mb-4">Sign in to your DEMO ERP business suite</p>
+
+        <div class="alert alert-danger py-2 fs-13 d-none" id="loginError"><i class="bi bi-x-circle me-1"></i>Invalid username or password. Try <strong>admin</strong> / <strong>123456</strong>.</div>
+        <div class="alert alert-success py-2 fs-13 d-none" id="loginOut"><i class="bi bi-check-circle me-1"></i>You have been signed out.</div>
+
+        <form method="post" action="/login">
+          <div class="mb-3">
+            <label class="form-label" for="username">Username</label>
+            <div class="input-group input-group-lg">
+              <span class="input-group-text" style="border-radius:12px 0 0 12px"><i class="bi bi-person"></i></span>
+              <input type="text" name="username" id="username" class="form-control form-control-lg" placeholder="Enter your username" required autofocus style="border-radius:0 12px 12px 0">
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="password">Password</label>
+            <div class="input-group input-group-lg">
+              <span class="input-group-text" style="border-radius:12px 0 0 12px"><i class="bi bi-lock"></i></span>
+              <input type="password" name="password" id="password" class="form-control form-control-lg" placeholder="Enter your password" required style="border-radius:0 12px 12px 0">
+            </div>
+          </div>
+          <div class="d-flex justify-content-between align-items-center mb-4">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="remember-me" id="rememberMe">
+              <label class="form-check-label muted fs-13" for="rememberMe">Remember me</label>
+            </div>
+            <a href="#" class="fs-13 text-primary" id="forgotLink">Forgot password?</a>
+          </div>
+          <button class="btn btn-primary btn-lg w-100" type="submit"><i class="bi bi-box-arrow-in-right me-1"></i> Sign in</button>
+        </form>
+
+        <div class="login-hint mt-4 text-center">
+          Demo credentials &mdash; username: <strong>admin</strong> &middot; password: <strong>123456</strong>
+        </div>
+      </div>
+    </div>
+    <p class="text-center muted fs-12 mt-3 mb-0">&copy; 2026 DEMO ERP &mdash; Built for Oman business</p>
+  </div>
+
+  <script src="/js/i18n.js"></script>
+  <script>
+    (function () {
+      var p = new URLSearchParams(location.search);
+      if (p.get('error')) document.getElementById('loginError').classList.remove('d-none');
+      if (p.get('logout')) document.getElementById('loginOut').classList.remove('d-none');
+      document.getElementById('forgotLink').addEventListener('click', function (e) {
+        e.preventDefault();
+        var el = document.createElement('div');
+        el.className = 'DEMO-toast';
+        el.innerHTML = '<i class="bi bi-info-circle-fill text-primary"></i><div><div class="tt">Password reset</div><div class="tm">Contact your administrator to reset your password.</div></div>';
+        document.body.appendChild(el);
+        setTimeout(function () { el.remove(); }, 3200);
+      });
+      var langBtn = document.getElementById('loginLang');
+      function syncLangBtn() {
+        langBtn.textContent = EDY.i18n.isArabic() ? 'English' : '\u0627\u0644\u0639\u0631\u0628\u064a\u0629';
+      }
+      syncLangBtn();
+      langBtn.addEventListener('click', function () {
+        EDY.i18n.setLang(EDY.i18n.isArabic() ? 'en' : 'ar');
+        syncLangBtn();
+      });
+    })();
+  </script>
+</body>
+</html>

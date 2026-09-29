@@ -1,0 +1,7 @@
+package ERP.Software.demo.inventory.repository;
+
+import ERP.Software.demo.inventory.model.Category;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface CategoryRepository extends JpaRepository<Category, Long> {
+}

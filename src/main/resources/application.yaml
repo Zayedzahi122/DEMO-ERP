@@ -1,0 +1,28 @@
+# Replace your existing src/main/resources/application.yaml with this
+# (it keeps your "demo" app name and adds the MySQL + JPA config)
+
+spring:
+  application:
+    name: demo
+  datasource:
+    url: jdbc:mysql://localhost:3306/erp_db?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+  # You included spring-boot-starter-data-redis — if you don't have a Redis server
+  # running locally, either remove that dependency from pom.xml, or leave this
+  # commented out and Spring Boot will still try default localhost:6379 lazily.
+  # data:
+  #   redis:
+  #     host: localhost
+  #     port: 6379
+
+server:
+  port: 1921

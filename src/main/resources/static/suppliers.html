@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Suppliers &mdash; DEMO ERP</title>
+  <link rel="icon" href="/favicon.ico">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body data-page="suppliers">
+  <main class="page-content" id="pageContent"></main>
+
+  <div class="modal fade" id="supModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form id="supForm">
+          <div class="modal-header"><h5 class="modal-title" id="smTitle">Add Supplier</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+          <div class="modal-body">
+            <input type="hidden" id="sId">
+            <div class="row g-3">
+              <div class="col-12"><label class="form-label">Company / Supplier Name *</label><input class="form-control" id="sName" required></div>
+              <div class="col-md-6"><label class="form-label">Phone</label><input class="form-control" id="sPhone" placeholder="+968 2XXX XXXX"></div>
+              <div class="col-md-6"><label class="form-label">Email</label><input class="form-control" id="sEmail" type="email" placeholder="supplier@company.com"></div>
+              <div class="col-12"><label class="form-label">Address</label><textarea class="form-control" id="sAddr" rows="2" placeholder="Street, Wilayat, Oman"></textarea></div>
+              <div class="col-12"><label class="form-label">Notes</label><textarea class="form-control" id="sNotes" rows="2" placeholder="Payment terms, lead times, etc."></textarea></div>
+            </div>
+          </div>
+          <div class="modal-footer"><button type="button" class="btn btn-ghost" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary" type="submit"><i class="bi bi-check-lg me-1"></i>Save</button></div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="detailModal2" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-xl">
+      <div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title">Supplier Details</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body" id="detailBody2"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="/js/api.js"></script>
+  <script src="/js/ui.js"></script>
+  <script src="/js/i18n.js"></script>
+  <script src="/js/layout.js"></script>
+  <script src="/js/pages/suppliers.js"></script>
+</body>
+</html>

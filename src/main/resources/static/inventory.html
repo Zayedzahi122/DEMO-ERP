@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Inventory &mdash; EDY ERP</title>
+  <link rel="icon" href="/favicon.ico">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body data-page="inventory">
+  <main class="page-content" id="pageContent"></main>
+
+  <div class="modal fade" id="adjustModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title">Adjust Stock</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+          <label class="form-label">Product</label>
+          <select class="form-select mb-3" id="adjProduct"></select>
+          <div class="row g-3">
+            <div class="col-6"><label class="form-label">Current Stock</label><input class="form-control" id="adjCurrent" disabled></div>
+            <div class="col-6"><label class="form-label">Adjustment *</label><input class="form-control" id="adjQty" type="number" step="1" placeholder="e.g. 5 or -2"></div>
+            <div class="col-12"><label class="form-label">Reason</label><input class="form-control" id="adjNote" placeholder="e.g. Damaged, inventory check, restock"></div>
+          </div>
+        </div>
+        <div class="modal-footer"><button class="btn btn-ghost" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary" id="adjSave"><i class="bi bi-check-lg me-1"></i>Save Adjustment</button></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="/js/api.js"></script>
+  <script src="/js/ui.js"></script>
+  <script src="/js/i18n.js"></script>
+  <script src="/js/layout.js"></script>
+  <script src="/js/pages/inventory.js"></script>
+</body>
+</html>
