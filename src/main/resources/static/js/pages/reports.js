@@ -1,4 +1,4 @@
-/* EDY ERP — Reports (21 reports, grouped by module) */
+﻿/* EDY ERP â€” Reports (21 reports, grouped by module) */
 window.PAGE = {
   init: async function () {
     const box = document.getElementById('pageContent');
@@ -71,6 +71,22 @@ window.PAGE = {
       return '<div class="report-stats mb-3">' + items.join('') + '</div>';
     }
     function csvPair(rows) { csvRows = rows; }
+
+    /* ---------- cash-register View button ----------
+     * Delegated on the report container rather than per-button, so the handler
+     * survives every re-render of the register list. Bound once per init(). */
+    function bindViewButtons() {
+      const host = document.getElementById('reportView');
+      if (!host || host.__viewBound) return;
+      host.__viewBound = true;
+      host.addEventListener('click', function (ev) {
+        const btn = ev.target && ev.target.closest ? ev.target.closest('[data-view-session]') : null;
+        if (!btn || !host.contains(btn)) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        RENDER.sessionDetail(btn.getAttribute('data-view-session'));
+      });
+    }
 
     /* ---------- report registry ---------- */
     const GROUPS = [
@@ -167,7 +183,7 @@ window.PAGE = {
         const netVat = salesVat - purVat;
         view(
           '<div class="card"><div class="card-body">' +
-          '<h5 class="fw-bold mb-1">Sales Tax Report (VAT)</h5><div class="muted fs-13 mb-3">' + periodLabel() + ' \u2014 Oman VAT at 5%</div>' +
+          '<h5 class="fw-bold mb-1">Sales Tax Report (VAT)</h5><div class="muted fs-13 mb-3">' + periodLabel() + ' \u2014 VAT at ' + EDY.vat.pct() + '%</div>' +
           statsRow([stat('Sales (excl. VAT)', money(salesNet), ss.length + ' invoices'), stat('VAT Collected', money(salesVat)), stat('Input VAT (Purchases)', money(purVat)), stat('Net VAT Payable', money(netVat), netVat < 0 ? 'refundable' : 'own to government')]) +
           table(
             '<tr><th>Description</th><th class="text-end">Net</th><th class="text-end">VAT</th><th class="text-end">Gross</th></tr>',
@@ -525,7 +541,8 @@ window.PAGE = {
           '<div class="card"><div class="card-body">' +
           '<h5 class="fw-bold mb-1">Cash Register</h5><div class="muted fs-13 mb-3">Open / close sessions</div>' +
           (open
-            ? '<div class="alert alert-soft border-start border-success fs-14 py-2 mb-3"><i class="bi bi-cash-coin me-1 text-green"></i>Register is <span class="fw-bold">OPEN</span> \u2014 opened by ' + esc(open.cashier || '\u2014') + ' with ' + money(open.openingCash) + '. Cash received: ' + money(open.cashIn) + '. Expected: ' + money((Number(open.openingCash || 0)) + Number(open.cashIn || 0)) + '.</div>'
+            ? '<div class="alert alert-soft border-start border-success fs-14 py-2 mb-3 d-flex justify-content-between align-items-center gap-2"><span><i class="bi bi-cash-coin me-1 text-green"></i>Register is <span class="fw-bold">OPEN</span> \u2014 opened by ' + esc(open.cashier || '\u2014') + ' with ' + money(open.openingCash) + '. Cash received: ' + money(open.cashIn) + '. Expected: ' + money((Number(open.openingCash || 0)) + Number(open.cashIn || 0)) + '.</span>' +
+            '<button class="btn btn-sm btn-outline-primary text-nowrap" type="button" data-view-session="current" title="View current session detail"><i class="bi bi-eye me-1"></i>View</button></div>'
             : '<div class="alert alert-soft border-start border-danger fs-14 py-2 mb-3"><i class="bi bi-cash-stack me-1 text-red"></i>Register is currently <span class="fw-bold">CLOSED</span>.</div>') +
           (sessions.length ? table(
             '<tr><th>Opened</th><th>Closed</th><th>Cashier</th><th class="text-end">Opening</th><th class="text-end">Cash In</th><th class="text-end">Expected</th><th class="text-end">Counted</th><th class="text-end">Diff</th><th class="text-end">View</th></tr>',
@@ -540,25 +557,172 @@ window.PAGE = {
       },
       sessionDetail: function (idx) {
         const reg = (window.EDY && EDY.register) ? EDY.register : null;
-        const arr = (reg && reg.sessions) ? reg.sessions() : [];
-        const s = (arr || [])[Number(idx)];
+        if (!reg) { view(empty('Cash register module not loaded'), []); return; }
+        const state = reg.getState() || {};
+        const closed = reg.sessions() || [];
+        const live = state.open || null;
+
+        // "current" opens the session that is still open; a number opens a closed one.
+        const isCurrent = idx === 'current';
+        const s = isCurrent ? live : closed[Number(idx)];
         if (!s) { view(empty('Session not found'), []); return; }
-        const from = s.openedAt ? new Date(s.openedAt).getTime() : 0;
-        const to = s.closedAt ? new Date(s.closedAt).getTime() : Date.now();
+
+        // A session spans whole calendar days, because sales are dated by business
+        // day ("2026-09-30") rather than by timestamp. Comparing a date-only invoice
+        // against an exact open/close timestamp would drop every same-day sale, so we
+        // widen the window to the first instant of the opening day .. last instant of
+        // the closing day. Where a payment carries a real timestamp we still prefer it.
+        const startAt = s.openedAt ? new Date(s.openedAt) : null;
+        const endAt = s.closedAt ? new Date(s.closedAt) : new Date();
+        const dayFrom = new Date(startAt || endAt);
+        dayFrom.setHours(0, 0, 0, 0);
+        const dayTo = new Date(endAt);
+        dayTo.setHours(23, 59, 59, 999);
+
+        function invoiceTime(v) {
+          const pays = v.payments || [];
+          const stamps = pays
+            .map(p => (p && p.paidAt) ? new Date(p.paidAt) : null)
+            .filter(d => d && !isNaN(d.getTime()));
+          if (stamps.length) return new Date(Math.min.apply(null, stamps.map(d => d.getTime())));
+          const raw = v.invoiceDate || v.createdAt || v.date;
+          if (!raw) return null;
+          const d = new Date(raw);
+          return isNaN(d.getTime()) ? null : d;
+        }
+
         const win = sales.filter(v => {
-          const d = new Date(v.invoiceDate || v.saleDate || v.date || 0).getTime();
-          return d >= from && d <= to;
+          const t = invoiceTime(v);
+          if (!t) return false;
+          return t.getTime() >= dayFrom.getTime() && t.getTime() <= dayTo.getTime();
         });
-        EDY.reports.register(); EDY.reports.bindSessionViews();
+
+        const badge = (m) => 'badge ' + (m === 'CASH' ? 'bg-soft-green'
+          : m === 'CARD' ? 'bg-soft-blue'
+            : m === 'CREDIT' ? 'bg-soft-amber' : 'bg-soft-purple');
+
+        // Each invoice lists every payment leg, so a part-cash / part-card sale
+        // shows both. Invoices with no payment rows fall back to the single
+        // paymentMethod recorded on the invoice itself.
+        function paymentsOf(v) {
+          const pays = v.payments || [];
+          if (pays.length) {
+            return pays.map(p => ({
+              method: String(p.method || 'CASH').toUpperCase(),
+              amount: Number(p.amount || 0),
+              at: p.paidAt || null,
+              note: p.note || ''
+            }));
+          }
+          return [{
+            method: String(v.paymentMethod || 'CASH').toUpperCase(),
+            amount: Number(v.amountPaid != null ? v.amountPaid : (v.totalAmount || 0)),
+            at: null,
+            note: ''
+          }];
+        }
+
+        function paymentCell(v) {
+          return paymentsOf(v).map(p =>
+            '<span class="' + badge(p.method) + ' me-1 mb-1" title="' + esc(p.note || p.method) + '">' +
+            esc(p.method) + ' ' + money(p.amount) + '</span>').join(' ');
+        }
+
+        function itemsCell(v) {
+          const its = (v.items || []).map(it => {
+            const nm = (it.product && (it.product.name || it.productName)) || it.productName || it.name || '\u2014';
+            const q = it.qty || it.quantity || 1;
+            const pr = it.price || it.unitPrice || it.unitCost || 0;
+            const lt = it.lineTotal != null ? it.lineTotal : (Number(q) * Number(pr));
+            return '<div class="fs-13">' + esc(nm) + ' <span class="muted">&times; ' + q + ' @ ' + money(pr) +
+              '</span> = <span class="fw-semibold">' + money(lt) + '</span></div>';
+          }).join('');
+          return its || '<span class="muted">\u2014</span>';
+        }
+
+        // Totals per payment method, so the header answers "how much cash / card".
+        const totals = {};
+        let billed = 0, received = 0, count = 0;
+        win.forEach(v => {
+          count++;
+          billed += Number(v.totalAmount || v.total || 0);
+          paymentsOf(v).forEach(p => {
+            totals[p.method] = (totals[p.method] || 0) + p.amount;
+            received += p.amount;
+          });
+        });
+        const methods = Object.keys(totals).sort();
+        const totalCards = count;
+
+        const summaryCards = [
+          stat('Invoices', String(totalCards)),
+          stat('Billed', money(billed)),
+          stat('Received', money(received)),
+          stat('Still due', money(billed - received))
+        ].concat(methods.map(m => stat(m, money(totals[m]))));
+
+        const hdr = '<tr><th>Invoice</th><th>Date</th><th>Customer</th>' +
+          '<th class="text-end">Total</th><th>Payments</th><th>What was sold</th></tr>';
+        const rows = win.map(v =>
+          '<tr><td><code>' + esc(v.invoiceNumber || v.invoiceNo || v.id) + '</code></td>' +
+          '<td class="fs-13">' + day(v.invoiceDate || v.createdAt) + '</td>' +
+          '<td>' + esc((v.customer && (v.customer.name || v.customer.company)) || v.customerName || '\u2014') + '</td>' +
+          '<td class="text-end fw-semibold">' + money(v.totalAmount || v.total || 0) + '</td>' +
+          '<td>' + paymentCell(v) + '</td>' +
+          '<td>' + itemsCell(v) + '</td></tr>').join('');
+
+        const diff = Number(s.difference || 0);
+        const diffCls = diff < 0 ? 'text-red' : diff > 0 ? 'text-amber' : 'text-green';
+
+        view(
+          '<div class="card"><div class="card-body">' +
+          '<div class="d-flex justify-content-between align-items-center mb-3">' +
+          '<h5 class="fw-bold mb-0"><i class="bi bi-cash-stack me-2 text-primary"></i>' +
+          (isCurrent ? 'Current Session' : 'Session Detail') +
+          (isCurrent ? ' <span class="badge bg-soft-green">OPEN</span>' : ' <span class="badge bg-soft-gray">CLOSED</span>') +
+          '</h5>' +
+          '<button class="btn btn-sm btn-outline-secondary" type="button" id="btnBackSession">' +
+          '<i class="bi bi-arrow-left me-1"></i>Back to register</button></div>' +
+
+          '<div class="d-flex flex-wrap gap-4 mb-3 fs-13">' +
+          '<div><span class="muted">Opened</span><div class="fw-semibold">' + dtime(s.openedAt) + '</div></div>' +
+          '<div><span class="muted">Closed</span><div class="fw-semibold">' + (s.closedAt ? dtime(s.closedAt) : 'Still open') + '</div></div>' +
+          '<div><span class="muted">Cashier</span><div class="fw-semibold">' + esc(s.cashier || '\u2014') + '</div></div>' +
+          '<div><span class="muted">Opening float</span><div class="fw-semibold">' + money(s.openingCash) + '</div></div>' +
+          (isCurrent
+            ? '<div><span class="muted">Cash received</span><div class="fw-semibold">' + money(s.cashIn) + '</div></div>' +
+            '<div><span class="muted">Expected in drawer</span><div class="fw-semibold">' + money(Number(s.openingCash || 0) + Number(s.cashIn || 0)) + '</div></div>'
+            : '<div><span class="muted">Expected</span><div class="fw-semibold">' + money(s.expected) + '</div></div>' +
+            '<div><span class="muted">Counted</span><div class="fw-semibold">' + money(s.counted) + '</div></div>' +
+            '<div><span class="muted">Difference</span><div class="fw-semibold ' + diffCls + '">' + money(diff) + '</div></div>') +
+          '</div>' +
+
+          statsRow(summaryCards) +
+
+          note('Sales are matched to this session by calendar day (' +
+            day(dayFrom) + (dayFrom.getTime() !== dayTo.getTime() ? ' \u2013 ' + day(dayTo) : '') +
+            '). An invoice counts if any of its payments was received in that window.') +
+
+          (win.length ? table(hdr, rows)
+            : empty('No sales were recorded in this session')) +
+          '</div></div>',
+
+          win.map(v => [
+            v.invoiceNumber || '',
+            v.invoiceDate || '',
+            (v.customer && (v.customer.name || v.customer.company)) || v.customerName || '',
+            money(v.totalAmount || v.total || 0),
+            paymentsOf(v).map(p => p.method + ' ' + money(p.amount)).join(' + ')
+          ])
+        );
+
+        const back = document.getElementById('btnBackSession');
+        if (back) back.addEventListener('click', () => RENDER.register());
       },
       bindSessionViews: function () {
-        document.addEventListener('click', function (ev) {
-          const t = ev.target && ev.target.closest ? ev.target.closest('[data-view-session]') : null;
-          if (!t) return;
-          const i = Number(t.getAttribute('data-view-session'));
-          if (isNaN(i)) { view(empty('No such session'), []); return; }
-          EDY.reports.sessionDetail(i);
-        });
+        // Kept for callers that used to call it; the real binding happens once
+        // at the bottom of init(). Safe to call repeatedly.
+        bindViewButtons();
       },
       srep: function () {
         const arr = users.map(u => ({ u, sales: 0, amount: 0 }));
@@ -630,62 +794,7 @@ window.PAGE = {
     });
 
     renderList();
+    bindViewButtons();
     if (RENDER[activeKey]) RENDER[activeKey]();
   }
 }
-EDY.reports.sessionDetail = function (idx) {
-        const reg = (window.EDY && EDY.register) ? EDY.register : null;
-        const sAll = (reg && reg.sessions) ? (reg.sessions() || []) : [];
-        const s = sAll[Number(idx)];
-        if (!s) { view(empty('Session not found'), []); return; }
-        const from = s.openedAt ? new Date(s.openedAt).getTime() : 0;
-        const to = s.closedAt ? (s.closedAt ? new Date(s.closedAt).getTime() : Date.now()) : Date.now();
-        const win = sales.filter(v => {
-          const d = new Date(v.invoiceDate || v.saleDate || v.date || v.createdAt || 0).getTime();
-          return (!from || d >= from) && d <= to;
-        });
-        const hdr = '<tr><th>Invoice</th><th>Customer</th><th class="text-end">Total</th><th>What was sold</th></tr>';
-        const rows = win.map(v => {
-          const its = (v.items || []).map(it => {
-            const nm = (it.product && (it.product.name || it.productName)) || it.productName || it.name || '\u2014';
-            const q = it.qty || it.quantity || 1;
-            const pr = it.price || it.unitPrice || it.unitCost || 0;
-            const lt = it.lineTotal != null ? it.lineTotal : (Number(q) * Number(pr));
-            return '<div class="fs-13">' + esc(nm) + ' <span class="muted">&times; ' + q + ' @ ' + money(pr) + '</span> = <span class="fw-semibold">' + money(lt) + '</span></div>';
-          }).join('');
-          return '<tr><td><code>' + esc(v.invoiceNumber || v.invoiceNo || v.id) + '</code></td>' +
-            '<td>' + esc((v.customer && (v.customer.name || v.customer.company)) || v.customerName || '\u2014') + '</td>' +
-            '<td class="text-end">' + money(v.total || v.totalAmount || 0) + '</td><td>' + (its || '\u2014') + '</td></tr>';
-        }).join('');
-        view(
-          '<div class="card"><div class="card-body">' +
-          '<div class="d-flex justify-content-between align-items-center mb-3"><h5 class="fw-bold mb-0"><i class="bi bi-cash-stack me-2 text-primary"></i>Session Detail</h5>' +
-          '<button class="btn btn-sm btn-outline-secondary" type="button" id="btnBackSession"><i class="bi bi-arrow-left me-1"></i>Back</button></div>' +
-          '<div class="d-flex flex-wrap gap-3 mb-3 fs-13">' +
-            '<div><span class="muted">Opened</span><div class="fw-semibold">' + dtime(s.openedAt) + '</div></div>' +
-            '<div><span class="muted">Closed</span><div class="fw-semibold">' + (s.closedAt ? dtime(s.closedAt) : '\u2014') + '</div></div>' +
-            '<div><span class="muted">Cashier</span><div class="fw-semibold">' + esc(s.cashier || '\u2014') + '</div></div>' +
-            '<div><span class="muted">Opening</span><div class="fw-semibold">' + money(s.openingCash) + '</div></div>' +
-            '<div><span class="muted">Expected</span><div class="fw-semibold">' + money(s.expected) + '</div></div>' +
-            '<div><span class="muted">Counted</span><div class="fw-semibold">' + money(s.counted) + '</div></div>' +
-            '<div><span class="muted">Diff</span><div class="fw-semibold ' + (s.difference < 0 ? 'text-red' : 'text-green') + '">' + money(s.difference) + '</div></div>' +
-          '</div>' +
-          (win.length ? table(hdr, rows) : empty('No sales in this session')) +
-          '</div></div>',
-          win.map(v => ['INV', v.invoiceNumber || v.invoiceNo || '', (v.customer && (v.customer.name || v.customer.company)) || v.customerName || '\u2014', money(v.total || v.totalAmount || 0)])
-        );
-        const bb = document.getElementById('btnBackSession');
-        if (bb) bb.addEventListener('click', function () { EDY.reports.register(); EDY.reports.bindSessionViews(); });
-      };
-      if (!window.__regSessBound && document.body) {
-        (function () {
-          document.addEventListener('click', function (ev) {
-            const bt = ev.target && ev.target.closest ? ev.target.closest('[data-view-session]') : null;
-            if (!bt) return;
-            const bi = Number(bt.getAttribute('data-view-session'));
-            if (isNaN(bi)) return;
-            EDY.reports.sessionDetail(bi);
-          });
-        })();
-        window.__regSessBound = true;
-      };
