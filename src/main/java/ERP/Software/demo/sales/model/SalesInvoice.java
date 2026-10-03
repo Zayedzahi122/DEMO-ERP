@@ -1,4 +1,4 @@
-package ERP.Software.demo.sales.model;
+﻿package ERP.Software.demo.sales.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import ERP.Software.demo.partner.model.Customer;
@@ -35,15 +35,19 @@ public class SalesInvoice {
     @Builder.Default
     private InvoiceStatus status = InvoiceStatus.CONFIRMED;
 
+    @Column(precision = 38, scale = 6)
     @Builder.Default
     private BigDecimal totalAmount = BigDecimal.ZERO;
 
+    @Column(precision = 38, scale = 6)
     @Builder.Default
     private BigDecimal subtotal = BigDecimal.ZERO;
 
+    @Column(precision = 38, scale = 6)
     @Builder.Default
     private BigDecimal discount = BigDecimal.ZERO;
 
+    @Column(precision = 38, scale = 6)
     @Builder.Default
     private BigDecimal taxAmount = BigDecimal.ZERO;
 
@@ -55,6 +59,7 @@ public class SalesInvoice {
     private Boolean totalOverridden = Boolean.FALSE;
 
     /** Sum of the payments recorded against this invoice. */
+    @Column(precision = 38, scale = 6)
     @Builder.Default
     private BigDecimal amountPaid = BigDecimal.ZERO;
 

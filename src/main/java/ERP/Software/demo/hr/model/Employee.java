@@ -1,4 +1,4 @@
-package ERP.Software.demo.hr.model;
+﻿package ERP.Software.demo.hr.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
@@ -37,6 +37,7 @@ public class Employee {
     @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
     private Department department;
 
+    @Column(precision = 38, scale = 6)
     private BigDecimal salary;
 
     @Builder.Default

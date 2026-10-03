@@ -1,4 +1,4 @@
-package ERP.Software.demo.quotation.model;
+﻿package ERP.Software.demo.quotation.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -30,7 +30,9 @@ public class QuotationItem {
 
     private Integer quantity;
 
+    @Column(precision = 38, scale = 6)
     private BigDecimal unitPrice;
 
+    @Column(precision = 38, scale = 6)
     private BigDecimal lineTotal;
 }

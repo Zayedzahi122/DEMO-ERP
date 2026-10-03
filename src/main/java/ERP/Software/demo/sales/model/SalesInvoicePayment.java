@@ -31,6 +31,7 @@ public class SalesInvoicePayment {
     @Builder.Default
     private String method = "CASH";
 
+    @Column(precision = 38, scale = 6)
     private BigDecimal amount;
 
     @Builder.Default

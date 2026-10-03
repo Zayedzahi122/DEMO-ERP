@@ -23,7 +23,7 @@ public class LedgerEntry {
     @Column(nullable = false)
     private EntryType type;
 
-    @Column(nullable = false)
+    @Column(nullable = false, precision = 38, scale = 6)
     private BigDecimal amount;
 
     private String description;

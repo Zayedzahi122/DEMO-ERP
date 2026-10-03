@@ -1,4 +1,4 @@
-package ERP.Software.demo.purchase.model;
+﻿package ERP.Software.demo.purchase.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -30,7 +30,9 @@ public class PurchaseInvoiceItem {
 
     private Integer quantity;
 
+    @Column(precision = 38, scale = 6)
     private BigDecimal unitCost;
 
+    @Column(precision = 38, scale = 6)
     private BigDecimal lineTotal;
 }

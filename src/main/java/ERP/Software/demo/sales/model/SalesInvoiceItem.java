@@ -1,4 +1,4 @@
-package ERP.Software.demo.sales.model;
+﻿package ERP.Software.demo.sales.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonIgnore;
@@ -30,7 +30,9 @@ public class SalesInvoiceItem {
 
     private Integer quantity;
 
+    @Column(precision = 38, scale = 6)
     private BigDecimal unitPrice;
 
+    @Column(precision = 38, scale = 6)
     private BigDecimal lineTotal;
 }

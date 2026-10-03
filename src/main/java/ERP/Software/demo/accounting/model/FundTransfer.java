@@ -36,7 +36,7 @@ public class FundTransfer {
 
     @NotNull
     @Positive
-    @Column(nullable = false)
+    @Column(nullable = false, precision = 38, scale = 6)
     private BigDecimal amount;
 
     @Builder.Default

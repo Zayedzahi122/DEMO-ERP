@@ -1,4 +1,4 @@
-package ERP.Software.demo.accounting.model;
+﻿package ERP.Software.demo.accounting.model;
 
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
@@ -33,11 +33,13 @@ public class PaymentAccount {
 
     private String bankDetails;
 
+    @Column(precision = 38, scale = 6)
     @NotNull
     @PositiveOrZero
     @Builder.Default
     private BigDecimal openingBalance = BigDecimal.ZERO;
 
+    @Column(precision = 38, scale = 6)
     @Builder.Default
     private BigDecimal currentBalance = BigDecimal.ZERO;
 

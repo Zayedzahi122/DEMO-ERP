@@ -3,6 +3,7 @@ package ERP.Software.demo.purchase.service;
 import ERP.Software.demo.accounting.model.EntryType;
 import ERP.Software.demo.accounting.service.LedgerService;
 import ERP.Software.demo.common.exception.ResourceNotFoundException;
+import ERP.Software.demo.common.money.Totals;
 import ERP.Software.demo.inventory.model.Product;
 import ERP.Software.demo.inventory.model.StockMovement;
 import ERP.Software.demo.inventory.repository.StockMovementRepository;
@@ -14,12 +15,12 @@ import ERP.Software.demo.purchase.model.PurchaseInvoice;
 import ERP.Software.demo.purchase.model.PurchaseInvoiceItem;
 import ERP.Software.demo.purchase.model.PurchaseStatus;
 import ERP.Software.demo.purchase.repository.PurchaseInvoiceRepository;
+import ERP.Software.demo.setting.service.SettingsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -28,13 +29,15 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class PurchaseInvoiceService {
 
-    public static final BigDecimal VAT_RATE = new BigDecimal("0.05");
+    /** Historic default, kept for callers that only need a sensible constant. */
+    public static final BigDecimal VAT_RATE = SettingsService.DEFAULT_VAT_RATE;
 
     private final PurchaseInvoiceRepository purchaseInvoiceRepository;
     private final SupplierRepository supplierRepository;
     private final ProductService productService;
     private final LedgerService ledgerService;
     private final StockMovementRepository stockMovementRepository;
+    private final SettingsService settingsService;
 
     public List<PurchaseInvoice> findAll() {
         return purchaseInvoiceRepository.findAll();
@@ -89,17 +92,17 @@ public class PurchaseInvoiceService {
             subtotal = subtotal.add(lineTotal);
         }
 
-        BigDecimal discount = invoice.getDiscount();
-        BigDecimal taxable = subtotal.subtract(discount);
-        BigDecimal tax = taxable.multiply(VAT_RATE).setScale(3, RoundingMode.HALF_UP);
-        BigDecimal total = taxable.add(tax);
+        // Shared with sales/quotations: caps the discount at the subtotal and
+        // rounds to the decimal scale configured in Settings.
+        Totals.Result t = Totals.of(subtotal, invoice.getDiscount(), settingsService.vatRate(), settingsService.moneyScale());
 
-        invoice.setSubtotal(subtotal);
-        invoice.setTaxAmount(tax);
-        invoice.setTotalAmount(total);
+        invoice.setSubtotal(t.subtotal());
+        invoice.setDiscount(t.discount());
+        invoice.setTaxAmount(t.taxAmount());
+        invoice.setTotalAmount(t.totalAmount());
         PurchaseInvoice saved = purchaseInvoiceRepository.save(invoice);
 
-        ledgerService.record(EntryType.EXPENSE, total,
+        ledgerService.record(EntryType.EXPENSE, t.totalAmount(),
                 "Purchase invoice " + saved.getInvoiceNumber(), "PURCHASE_INVOICE", saved.getId());
 
         return saved;

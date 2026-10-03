@@ -1,4 +1,4 @@
-package ERP.Software.demo.purchase.model;
+﻿package ERP.Software.demo.purchase.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import ERP.Software.demo.partner.model.Supplier;
@@ -31,15 +31,19 @@ public class PurchaseInvoice {
     @Builder.Default
     private LocalDate invoiceDate = LocalDate.now();
 
+    @Column(precision = 38, scale = 6)
     @Builder.Default
     private BigDecimal totalAmount = BigDecimal.ZERO;
 
+    @Column(precision = 38, scale = 6)
     @Builder.Default
     private BigDecimal subtotal = BigDecimal.ZERO;
 
+    @Column(precision = 38, scale = 6)
     @Builder.Default
     private BigDecimal discount = BigDecimal.ZERO;
 
+    @Column(precision = 38, scale = 6)
     @Builder.Default
     private BigDecimal taxAmount = BigDecimal.ZERO;
 

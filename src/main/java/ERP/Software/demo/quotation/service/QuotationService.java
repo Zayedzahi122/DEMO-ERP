@@ -1,6 +1,7 @@
 package ERP.Software.demo.quotation.service;
 
 import ERP.Software.demo.common.exception.ResourceNotFoundException;
+import ERP.Software.demo.common.money.Totals;
 import ERP.Software.demo.inventory.model.Product;
 import ERP.Software.demo.inventory.service.ProductService;
 import ERP.Software.demo.partner.model.Customer;
@@ -13,12 +14,12 @@ import ERP.Software.demo.quotation.repository.QuotationRepository;
 import ERP.Software.demo.sales.dto.SalesInvoiceRequest;
 import ERP.Software.demo.sales.model.SalesInvoice;
 import ERP.Software.demo.sales.service.SalesInvoiceService;
+import ERP.Software.demo.setting.service.SettingsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -32,6 +33,7 @@ public class QuotationService {
     private final CustomerRepository customerRepository;
     private final ProductService productService;
     private final SalesInvoiceService salesInvoiceService;
+    private final SettingsService settingsService;
 
     public List<Quotation> findAll() {
         return quotationRepository.findAll();
@@ -75,13 +77,14 @@ public class QuotationService {
             subtotal = subtotal.add(lineTotal);
         }
 
-        BigDecimal discount = quotation.getDiscount();
-        BigDecimal taxable = subtotal.subtract(discount);
-        BigDecimal tax = taxable.multiply(SalesInvoiceService.VAT_RATE).setScale(3, RoundingMode.HALF_UP);
+        // Shared with sales/purchases: caps the discount at the subtotal and
+        // rounds to the decimal scale configured in Settings.
+        Totals.Result t = Totals.of(subtotal, quotation.getDiscount(), settingsService.vatRate(), settingsService.moneyScale());
 
-        quotation.setSubtotal(subtotal);
-        quotation.setTaxAmount(tax);
-        quotation.setTotalAmount(taxable.add(tax));
+        quotation.setSubtotal(t.subtotal());
+        quotation.setDiscount(t.discount());
+        quotation.setTaxAmount(t.taxAmount());
+        quotation.setTotalAmount(t.totalAmount());
         return quotationRepository.save(quotation);
     }
 

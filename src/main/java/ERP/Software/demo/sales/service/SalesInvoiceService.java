@@ -4,6 +4,7 @@ import ERP.Software.demo.accounting.model.EntryType;
 
 import ERP.Software.demo.accounting.repository.LedgerEntryRepository;
 import ERP.Software.demo.accounting.service.LedgerService;
+import ERP.Software.demo.common.money.Totals;
 import ERP.Software.demo.common.exception.ResourceNotFoundException;
 import ERP.Software.demo.inventory.model.Product;
 import ERP.Software.demo.inventory.model.StockMovement;
@@ -17,6 +18,7 @@ import ERP.Software.demo.sales.model.SalesInvoice;
 import ERP.Software.demo.sales.model.SalesInvoiceItem;
 import ERP.Software.demo.sales.model.SalesInvoicePayment;
 import ERP.Software.demo.sales.repository.SalesInvoiceRepository;
+import ERP.Software.demo.setting.service.SettingsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,7 +33,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class SalesInvoiceService {
 
-    public static final BigDecimal VAT_RATE = new BigDecimal("0.05");
+    /** Historic default, kept for callers that only need a sensible constant. */
+    public static final BigDecimal VAT_RATE = SettingsService.DEFAULT_VAT_RATE;
 
     private final SalesInvoiceRepository salesInvoiceRepository;
     private final CustomerRepository customerRepository;
@@ -39,6 +42,7 @@ public class SalesInvoiceService {
     private final LedgerService ledgerService;
     private final LedgerEntryRepository ledgerEntryRepository;
     private final StockMovementRepository stockMovementRepository;
+    private final SettingsService settingsService;
 
     public List<SalesInvoice> findAll() {
         return salesInvoiceRepository.findAllBy();
@@ -93,21 +97,14 @@ public class SalesInvoiceService {
             subtotal = subtotal.add(lineTotal);
         }
 
-        BigDecimal discount = invoice.getDiscount();
-        BigDecimal taxable = subtotal.subtract(discount);
-        BigDecimal tax = taxable.multiply(VAT_RATE).setScale(3, RoundingMode.HALF_UP);
-        BigDecimal total = taxable.add(tax);
-
-        invoice.setSubtotal(subtotal);
-        invoice.setTaxAmount(tax);
-        invoice.setTotalAmount(total);
+        applyTotals(invoice, subtotal);
 
         // Manual total override: the entered figure wins, and is flagged so later edits
         // do not silently recalculate it away.
         boolean overridden = Boolean.TRUE.equals(request.getTotalOverridden()) && request.getTotalAmount() != null;
         if (overridden) {
             invoice.setTotalOverridden(Boolean.TRUE);
-            invoice.setTotalAmount(request.getTotalAmount().setScale(3, RoundingMode.HALF_UP));
+            invoice.setTotalAmount(settingsService.round(request.getTotalAmount()));
         }
 
         applyPayments(invoice, request.getPayments());
@@ -115,7 +112,9 @@ public class SalesInvoiceService {
 
         SalesInvoice saved = salesInvoiceRepository.save(invoice);
 
-        ledgerService.record(EntryType.INCOME, total,
+        // Book the amount actually stored, which differs from the computed total
+        // when the client supplied a manual override.
+        ledgerService.record(EntryType.INCOME, saved.getTotalAmount(),
                 "Sales invoice " + saved.getInvoiceNumber(), "SALES_INVOICE", saved.getId());
 
         return saved;
@@ -181,21 +180,14 @@ public class SalesInvoiceService {
         }
 
         // 5. Recalculate totals
-        BigDecimal discount = invoice.getDiscount();
-        BigDecimal taxable = subtotal.subtract(discount);
-        BigDecimal tax = taxable.multiply(VAT_RATE).setScale(3, RoundingMode.HALF_UP);
-        BigDecimal total = taxable.add(tax);
-
-        invoice.setSubtotal(subtotal);
-        invoice.setTaxAmount(tax);
-        invoice.setTotalAmount(total);
+        applyTotals(invoice, subtotal);
 
         // 5b. Manual total override. Only an explicit true/false changes the flag, so
         // omitting it leaves the invoice's existing setting untouched.
         boolean overridden = Boolean.TRUE.equals(request.getTotalOverridden()) && request.getTotalAmount() != null;
         if (overridden) {
             invoice.setTotalOverridden(Boolean.TRUE);
-            invoice.setTotalAmount(request.getTotalAmount().setScale(3, RoundingMode.HALF_UP));
+            invoice.setTotalAmount(settingsService.round(request.getTotalAmount()));
         } else if (Boolean.FALSE.equals(request.getTotalOverridden())) {
             invoice.setTotalOverridden(Boolean.FALSE);
         }
@@ -220,6 +212,20 @@ public class SalesInvoiceService {
                 });
 
         return saved;
+    }
+
+    /**
+     * Sets subtotal, discount, VAT and total from the given line subtotal, using
+     * the decimal scale and VAT rate configured in Settings. The discount is
+     * capped at the subtotal, because a larger one would push the taxable base
+     * negative and produce negative VAT and a negative total.
+     */
+    private void applyTotals(SalesInvoice invoice, BigDecimal subtotal) {
+        Totals.Result t = Totals.of(subtotal, invoice.getDiscount(), settingsService.vatRate(), settingsService.moneyScale());
+        invoice.setSubtotal(t.subtotal());
+        invoice.setDiscount(t.discount());
+        invoice.setTaxAmount(t.taxAmount());
+        invoice.setTotalAmount(t.totalAmount());
     }
 
     /**
@@ -278,9 +284,24 @@ public class SalesInvoiceService {
         if (invoice.getStatus() == InvoiceStatus.CANCELLED) {
             return invoice;
         }
+        // Return the stock and log it, so the movement history stays balanced
+        // against the "OUT" recorded when the sale was created.
         for (SalesInvoiceItem item : invoice.getItems()) {
             productService.adjustStock(item.getProduct().getId(), item.getQuantity());
+            stockMovementRepository.save(StockMovement.builder()
+                    .product(item.getProduct())
+                    .type("IN")
+                    .quantity(item.getQuantity())
+                    .note("Sale cancelled — stock returned")
+                    .reference("SALES")
+                    .build());
         }
+
+        // A voided sale is not income. Drop the ledger entry so the dashboard and
+        // reports stop counting revenue that no longer exists.
+        ledgerEntryRepository.findFirstByReferenceTypeAndReferenceId("SALES_INVOICE", invoice.getId())
+                .ifPresent(ledgerEntryRepository::delete);
+
         invoice.setStatus(InvoiceStatus.CANCELLED);
         return salesInvoiceRepository.save(invoice);
     }

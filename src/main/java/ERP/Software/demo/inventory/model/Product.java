@@ -1,4 +1,4 @@
-package ERP.Software.demo.inventory.model;
+﻿package ERP.Software.demo.inventory.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
@@ -36,12 +36,12 @@ public class Product {
 
     @NotNull
     @PositiveOrZero
-    @Column(nullable = false)
+    @Column(nullable = false, precision = 38, scale = 6)
     private BigDecimal unitPrice;
 
     @NotNull
     @PositiveOrZero
-    @Column(nullable = false)
+    @Column(nullable = false, precision = 38, scale = 6)
     private BigDecimal costPrice;
 
     @NotNull

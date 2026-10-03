@@ -1,4 +1,4 @@
-package ERP.Software.demo.quotation.model;
+﻿package ERP.Software.demo.quotation.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import ERP.Software.demo.partner.model.Customer;
@@ -37,15 +37,19 @@ public class Quotation {
     @Builder.Default
     private QuotationStatus status = QuotationStatus.DRAFT;
 
+    @Column(precision = 38, scale = 6)
     @Builder.Default
     private BigDecimal subtotal = BigDecimal.ZERO;
 
+    @Column(precision = 38, scale = 6)
     @Builder.Default
     private BigDecimal discount = BigDecimal.ZERO;
 
+    @Column(precision = 38, scale = 6)
     @Builder.Default
     private BigDecimal taxAmount = BigDecimal.ZERO;
 
+    @Column(precision = 38, scale = 6)
     @Builder.Default
     private BigDecimal totalAmount = BigDecimal.ZERO;
 
