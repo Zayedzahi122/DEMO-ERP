@@ -5,6 +5,7 @@ import ERP.Software.demo.user.repository.UserAccountRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
@@ -39,6 +40,17 @@ public class AuthController {
         me.put("modules", Arrays.stream((user.getModules() == null ? "" : user.getModules()).split(","))
                 .filter(m -> !m.isBlank()).toList());
         return me;
+    }
+
+    /**
+     * Forces CSRF token generation and returns it. The CookieCsrfTokenRepository
+     * saves the token to the XSRF-TOKEN cookie on the response. This endpoint
+     * is public so the SPA can fetch it on load before making mutating requests.
+     */
+    @GetMapping("/api/csrf")
+    public Map<String, String> csrf(CsrfToken csrfToken) {
+        // Just accessing the parameter forces token generation; the filter saves the cookie.
+        return Map.of("token", csrfToken.getToken(), "headerName", csrfToken.getHeaderName(), "parameterName", csrfToken.getParameterName());
     }
 
     public record ChangePasswordRequest(String oldPassword, String newPassword) {}

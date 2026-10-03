@@ -15,12 +15,19 @@ window.PAGE = {
     const setRoles = (r) => localStorage.setItem('edy.roles', JSON.stringify(r));
     let roles = getRoles();
 
+    // Creating/editing/deleting users and roles is restricted to Administrators
+    // server side (POST/PUT/DELETE /api/users -> 403). Viewing stays open to any
+    // signed-in user, so only the mutating controls are hidden here.
+    const isAdmin = !!(EDY.me && EDY.me.role === 'Administrator');
+
     box.innerHTML =
       '<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-4">' +
       '<div><h1 class="page-title mb-1">Users &amp; Roles</h1><div class="page-sub">Manage system users, roles and access permissions</div></div>' +
       '<div class="d-flex gap-2">' +
-      '<button class="btn btn-ghost" id="btnRoles"><i class="bi bi-shield-plus me-1"></i>Add Role</button>' +
-      '<button class="btn btn-primary" id="btnAdd"><i class="bi bi-person-plus me-1"></i>Add User</button>' +
+      (isAdmin
+        ? '<button class="btn btn-ghost" id="btnRoles"><i class="bi bi-shield-plus me-1"></i>Add Role</button>' +
+          '<button class="btn btn-primary" id="btnAdd"><i class="bi bi-person-plus me-1"></i>Add User</button>'
+        : '<span class="badge bg-soft-gray align-self-center px-3 py-2"><i class="bi bi-lock me-1"></i>Read only \u2014 Administrator only can edit</span>') +
       '</div>' +
       '</div>' +
 
@@ -88,7 +95,7 @@ window.PAGE = {
       if (window.EDY && EDY.ui && EDY.ui.openModal) EDY.ui.openModal('rolesModal');
     }
 
-    document.getElementById('btnRoles').addEventListener('click', openRoles);
+    if (isAdmin) document.getElementById('btnRoles').addEventListener('click', openRoles);
     document.getElementById('btnAddRole').addEventListener('click', () => {
       const input = document.getElementById('rName');
       const v = (input.value || '').trim();
@@ -130,11 +137,13 @@ window.PAGE = {
           { key: 'role', label: 'Role', render: (r) => roleBadge(r.role) },
           { key: 'branch', label: 'Branch', render: (r) => esc(r.branch || '\u2014') },
           { key: 'active', label: 'Status', render: (r) => r.active !== false ? '<span class="badge bg-soft-green">Active</span>' : '<span class="badge bg-soft-gray">Inactive</span>' },
-          { key: 'id', label: 'Actions', render: (r) =>
-            '<button class="btn btn-soft-primary btn-icon me-1" data-edit="' + r.id + '" title="Edit"><i class="bi bi-pencil"></i></button>' +
-            '<button class="btn btn-soft-danger btn-icon" data-del="' + r.id + '" title="Delete"><i class="bi bi-trash"></i></button>' }
+          { key: 'id', label: 'Actions', render: (r) => isAdmin
+            ? '<button class="btn btn-soft-primary btn-icon me-1" data-edit="' + r.id + '" title="Edit"><i class="bi bi-pencil"></i></button>' +
+              '<button class="btn btn-soft-danger btn-icon" data-del="' + r.id + '" title="Delete"><i class="bi bi-trash"></i></button>'
+            : '<span class="muted fs-12">&mdash;</span>' }
         ]
       });
+      if (!isAdmin) return;
       box.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => openEdit(Number(b.dataset.edit))));
       box.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => removeRole(Number(b.dataset.del))));
     }
@@ -151,7 +160,7 @@ window.PAGE = {
       document.getElementById('umTitle').textContent = u ? 'Edit User' : 'Add User';
     }
 
-    document.getElementById('btnAdd').addEventListener('click', () => { fillForm(null); if (EDY.ui.openModal) EDY.ui.openModal('userModal'); });
+    if (isAdmin) document.getElementById('btnAdd').addEventListener('click', () => { fillForm(null); if (EDY.ui.openModal) EDY.ui.openModal('userModal'); });
 
     function openEdit(id) { fillForm(users.find(x => x.id === id)); if (EDY.ui.openModal) EDY.ui.openModal('userModal'); }
     async function removeRole(id) {
