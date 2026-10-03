@@ -83,7 +83,12 @@ window.PAGE = {
     function byDate(arr, d) { return (arr || []).filter(r => sameDay(new Date(r.invoiceDate || r.entryDate || r.date), d)); }
     function sameDay(a, b) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
 
-    const today = new Date();
+    // money/num come from EDY.fmt so they follow the scale set in Settings.
+// Declared before first use - these are const, not hoisted function declarations.
+const money = EDY.fmt.money;
+const num = EDY.fmt.num;
+
+const today = new Date();
     const todaySales = byDate(sales, today).reduce((s, r) => s + Number(r.totalAmount || 0), 0);
     const todayOrders = byDate(sales, today).length;
     const purchaseAmt = moneyOf(purchases, 'totalAmount');
@@ -117,8 +122,6 @@ window.PAGE = {
     });
     document.getElementById('kpis').innerHTML = kpiHtml;
 
-    function money(v) { return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'OMR', minimumFractionDigits: 3, maximumFractionDigits: 3 }).format(v); }
-    function num(v) { return Number(v || 0).toLocaleString('en-US'); }
     function pct(v) { return (v >= 0 ? '+' : '') + v.toFixed(1) + '%'; }
     function totalOrders(s) { return (s || []).length; }
 

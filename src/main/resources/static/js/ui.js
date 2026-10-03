@@ -174,8 +174,18 @@ EDY.ui = (() => {
     function search(value) { q = (value || '').trim(); page = 1; render(); }
     function refresh(newData) { rows = newData || data; page = 1; render(); }
 
+    // Pages rebuild the table on every filter/page change while reusing the same
+    // search box, so binding per build would stack one listener each time and
+    // leave stale rows behind. Bind once, but always route to the newest table.
     if (searchInput) {
-      searchInput.addEventListener('input', (e) => search(e.target.value));
+      if (!searchInput.__edSearchBound) {
+        searchInput.__edSearchBound = true;
+        searchInput.addEventListener('input', (e) => {
+          const fn = searchInput.__edSearch;
+          if (fn) fn(e.target.value);
+        });
+      }
+      searchInput.__edSearch = search;
     }
     render();
     return { refresh, search, count: () => totalFiltered().length };

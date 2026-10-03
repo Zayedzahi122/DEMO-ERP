@@ -109,7 +109,7 @@ window.PAGE = {
     document.getElementById('btnCsv').addEventListener('click', () => {
       const expenses = entries.filter(e => e.type === 'EXPENSE');
       const head = 'Date,Description,Source,Reference,Amount';
-      const rows = expenses.map(e => [e.entryDate, e.description || '', e.referenceType || '', e.referenceId || '', Number(e.amount || 0).toFixed(3)]
+      const rows = expenses.map(e => [e.entryDate, e.description || '', e.referenceType || '', e.referenceId || '', EDY.fmt.amount(e.amount)]
         .map(v => '"' + String(v ?? '').replace(/"/g, '""') + '"').join(','));
       const blob = new Blob(['\ufeff' + head + '\n' + rows.join('\n')], { type: 'text/csv;charset=utf-8' });
       const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'expenses.csv'; a.click();

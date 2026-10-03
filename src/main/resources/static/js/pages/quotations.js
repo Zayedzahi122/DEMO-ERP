@@ -4,6 +4,9 @@ window.PAGE = {
     const box = document.getElementById('pageContent');
     const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const money = (v) => EDY.fmt.money(v);
+const amt = (v) => EDY.fmt.amount(v);          // same scale, no currency label
+const vatRate = () => Number(EDY.settings['tax.vatRate'] ?? 0.05);
+const vatPct = () => (vatRate() * 100).toLocaleString('en-US', { maximumFractionDigits: 4 });
 
     let quotations = [];
     let customers = [];
@@ -104,15 +107,15 @@ window.PAGE = {
     function calcQuoteTotals() {
       const st = qLines.reduce((s, l) => s + l.price * l.qty, 0);
       const disc = Number(document.getElementById('qDiscount').value) || 0;
-      const vat = (st - disc) * 0.05;
-      document.getElementById('qstSubtotal').textContent = st.toFixed(3);
-      document.getElementById('qstVat').textContent = vat.toFixed(3);
-      document.getElementById('qstTotal').textContent = (st - disc + vat).toFixed(3);
+      const vat = (st - disc) * vatRate();
+      document.getElementById('qstSubtotal').textContent = amt(st);
+      document.getElementById('qstVat').textContent = amt(vat);
+      document.getElementById('qstTotal').textContent = amt(st - disc + vat);
     }
 
     function renderLines() {
       document.querySelector('#qLines tbody').innerHTML = qLines.map((l, i) =>
-        '<tr><td class="fw-bold">' + esc(l.name) + '</td><td class="text-center">' + l.qty + '</td><td class="text-end">' + l.price.toFixed(3) + '</td><td class="text-end">' + (l.price * l.qty).toFixed(3) + '</td>' +
+        '<tr><td class="fw-bold">' + esc(l.name) + '</td><td class="text-center">' + l.qty + '</td><td class="text-end">' + amt(l.price) + '</td><td class="text-end">' + amt(l.price * l.qty) + '</td>' +
         '<td class="text-end"><button class="btn btn-soft-danger btn-icon btn-sm" data-qrm="' + i + '" title="Remove"><i class="bi bi-x-lg"></i></button></td></tr>'
       ).join('') || '<tr><td colspan="5" class="muted text-center">No items yet</td></tr>';
       document.querySelectorAll('[data-qrm]').forEach(b => b.addEventListener('click', () => { qLines.splice(Number(b.dataset.qrm), 1); renderLines(); calcQuoteTotals(); }));
@@ -189,14 +192,14 @@ window.PAGE = {
         (q.notes ? '<div class="p-2 rounded bg-soft-gray fs-13 mb-3">' + esc(q.notes) + '</div>' : '') +
         '<table class="table"><thead><tr><th>Item</th><th class="text-center">Qty</th><th class="text-end">Price</th><th class="text-end">Total</th></tr></thead><tbody>' +
         (q.items || []).map(it =>
-          '<tr><td class="fw-bold">' + esc((it.product && it.product.name) || 'Product #' + it.productId) + '</td><td class="text-center">' + it.quantity + '</td><td class="text-end">' + Number(it.unitPrice || 0).toFixed(3) + '</td><td class="text-end">' + Number(it.lineTotal || 0).toFixed(3) + '</td></tr>'
+          '<tr><td class="fw-bold">' + esc((it.product && it.product.name) || 'Product #' + it.productId) + '</td><td class="text-center">' + it.quantity + '</td><td class="text-end">' + amt(it.unitPrice) + '</td><td class="text-end">' + amt(it.lineTotal) + '</td></tr>'
         ).join('') +
         '</tbody></table>' +
         '<div class="row fs-14">' +
-        '<div class="col-6 offset-4 text-end muted">Subtotal</div><div class="col-2 text-end">' + Number(q.subtotal || 0).toFixed(3) + '</div>' +
-        (Number(q.discount || 0) > 0 ? '<div class="col-6 offset-4 text-end muted">Discount</div><div class="col-2 text-end text-red">\u2212' + Number(q.discount).toFixed(3) + '</div>' : '') +
-        '<div class="col-6 offset-4 text-end muted">VAT (5%)</div><div class="col-2 text-end">' + Number(q.taxAmount || 0).toFixed(3) + '</div>' +
-        '<div class="col-6 offset-4 text-end fw-bold">Total</div><div class="col-2 text-end fw-bold fs-5">' + Number(q.totalAmount || 0).toFixed(3) + '</div>' +
+        '<div class="col-6 offset-4 text-end muted">Subtotal</div><div class="col-2 text-end">' + amt(q.subtotal) + '</div>' +
+        (Number(q.discount || 0) > 0 ? '<div class="col-6 offset-4 text-end muted">Discount</div><div class="col-2 text-end text-red">\u2212' + amt(q.discount) + '</div>' : '') +
+        '<div class="col-6 offset-4 text-end muted">VAT (' + esc(vatPct()) + '%)</div><div class="col-2 text-end">' + amt(q.taxAmount) + '</div>' +
+        '<div class="col-6 offset-4 text-end fw-bold">Total</div><div class="col-2 text-end fw-bold fs-5">' + amt(q.totalAmount) + '</div>' +
         '</div>';
       const btnConvert = document.getElementById('qvConvert');
       btnConvert.style.display = q.status === 'CONVERTED' ? 'none' : '';

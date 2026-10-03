@@ -146,7 +146,7 @@ window.PAGE = {
           { key: 'category', label: 'Category', render: (r) => r.category ? '<span class="badge bg-soft-blue">' + esc(r.category.name) + '</span>' : '\u2014' },
           { key: 'costPrice', label: 'Purchase', money: true },
           { key: 'unitPrice', label: 'Selling', money: true },
-          { key: 'vat', label: 'VAT', render: () => '<span class="badge bg-soft-purple">5%</span>' },
+          { key: 'vat', label: 'VAT', render: () => '<span class="badge bg-soft-purple">' + EDY.vat.pct() + '%</span>' },
           { key: 'quantityInStock', label: 'Stock', render: (r) => '<span class="fw-bold">' + EDY.fmt.num(r.quantityInStock) + '</span>' },
           { key: 'reorderLevel', label: 'Min', render: (r) => EDY.fmt.num(r.reorderLevel || 0) },
           { key: 'status', label: 'Status', render: (r) => stockBadge(r) },
@@ -188,7 +188,7 @@ window.PAGE = {
         row('Description', esc(p.description || '\u2014')) +
         row('Purchase Price', money(p.costPrice)) +
         row('Selling Price', money(p.unitPrice)) +
-        row('VAT', '5%') +
+        row('VAT', EDY.vat.pct() + '%') +
         row('Stock Qty', EDY.fmt.num(p.quantityInStock)) +
         row('Reorder Level', EDY.fmt.num(p.reorderLevel || 0)) +
         row('Status', stockBadge(p));

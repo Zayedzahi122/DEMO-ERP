@@ -53,7 +53,7 @@ window.PAGE = {
           '<div class="pos-cart-totals">' +
             '<div class="row-line"><span>Subtotal</span><span class="fw-semibold text-dark" id="tSub">' + money(0) + '</span></div>' +
             '<div class="row-line"><span>Discount</span><span><input class="form-control form-control-sm text-end" style="width:110px;display:inline-block" type="number" min="0" step="0.001" id="tDiscount" value="0"></span></div>' +
-            '<div class="row-line"><span>VAT (5%)</span><span class="fw-semibold text-dark" id="tTax">' + money(0) + '</span></div>' +
+            '<div class="row-line"><span>VAT (' + EDY.vat.pct() + '%)</span><span class="fw-semibold text-dark" id="tTax">' + money(0) + '</span></div>' +
             '<div class="row-line grand"><span>Grand Total</span><span class="text-primary" id="tGrand">' + money(0) + '</span></div>' +
             '<hr class="my-2">' +
             '<label class="form-label">Customer</label>' +
@@ -221,7 +221,7 @@ window.PAGE = {
       const subtotal = cart.reduce((s, c) => s + Number(c.product.unitPrice || 0) * c.qty, 0);
       const disc = Math.min(Number(document.getElementById('tDiscount').value || 0), subtotal);
       const taxable = subtotal - disc;
-      const tax = taxable * 0.05;
+      const tax = taxable * EDY.vat.rate();
       return { subtotal, discount: disc, tax, computed: taxable + tax, grand: taxable + tax };
     }
 
@@ -472,7 +472,7 @@ window.PAGE = {
         '<div class="d-flex justify-content-between fs-13"><span class="muted">Items</span><span>' + ci + '</span></div>' +
         '<div class="d-flex justify-content-between fs-13"><span class="muted">Subtotal</span><span>' + money(inv.subtotal) + '</span></div>' +
         '<div class="d-flex justify-content-between fs-13"><span class="muted">Discount</span><span>' + money(inv.discount || 0) + '</span></div>' +
-        '<div class="d-flex justify-content-between fs-13"><span class="muted">VAT (5%)</span><span>' + money(inv.taxAmount) + '</span></div>' +
+        '<div class="d-flex justify-content-between fs-13"><span class="muted">VAT (' + EDY.vat.pct() + '%)</span><span>' + money(inv.taxAmount) + '</span></div>' +
         '<div class="d-flex justify-content-between fs-5 fw-bold mt-1 border-top pt-2"><span>Total</span><span>' + money(inv.totalAmount) + '</span></div>' +
         ((inv.payments && inv.payments.length)
           ? (inv.payments || []).map(p => '<div class="d-flex justify-content-between fs-13"><span class="muted">Paid (' + esc(payMap[p.method] || p.method) + ')</span><span>' + money(p.amount) + '</span></div>').join('') +

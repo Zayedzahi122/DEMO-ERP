@@ -109,7 +109,7 @@ EDY.layout = (() => {
       '<aside class="sidebar" id="edySidebar">' +
         '<div class="sidebar-brand">' +
           '<div class="logo">E</div>' +
-          '<div><div class="brand-name">DEMO ERP</div><div class="brand-sub">Business Suite</div></div>' +
+          '<div><div class="brand-name">' + escapeHtml(EDY.settings['biz.name'] || 'DEMO ERP') + '</div><div class="brand-sub">Business Suite</div></div>' +
         '</div>' +
         '<nav class="sidebar-nav">' +
           '<div class="sidebar-section">Main Menu</div>' + navHtml +
@@ -295,6 +295,16 @@ EDY.layout = (() => {
       me = await EDY.api.get('/api/auth/me');
     } catch (e) {
       return;
+    }
+    // Money formatting reads EDY.settings, so load them before anything renders.
+    // But first, prime the CSRF cookie so mutating requests work.
+    try {
+      await EDY.api.primeCsrf();
+    } catch (e) { /* non-fatal */ }
+    try {
+      Object.assign(EDY.settings, await EDY.api.get('/api/settings'));
+    } catch (e) {
+      // keep the built-in defaults rather than blocking the page
     }
     if (me.modules && me.modules.length) {
       navItems = NAV.filter(n => me.modules.includes(n.key));

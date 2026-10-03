@@ -109,7 +109,7 @@ window.PAGE = {
 
     document.getElementById('btnCsv').addEventListener('click', () => {
       const head = 'Name,Phone,Email,Address,Orders,Total Purchases';
-      const rows = suppliers.map(s => { const st = stats(s.id); return [s.name, s.phone || '', s.email || '', s.address || '', st.count, st.total.toFixed(3)].map(v => '"' + String(v ?? '').replace(/"/g, '""') + '"').join(','); });
+      const rows = suppliers.map(s => { const st = stats(s.id); return [s.name, s.phone || '', s.email || '', s.address || '', st.count, EDY.fmt.amount(st.total)].map(v => '"' + String(v ?? '').replace(/"/g, '""') + '"').join(','); });
       const blob = new Blob(['\ufeff' + head + '\n' + rows.join('\n')], { type: 'text/csv;charset=utf-8' });
       const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'suppliers.csv'; a.click();
     });

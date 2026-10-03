@@ -34,7 +34,7 @@ window.PAGE = {
 
     function calcPoTotal() {
       const sub = poLines.reduce((s, l) => s + l.qty * l.cost, 0);
-      const vat = sub * 0.05;
+      const vat = sub * EDY.vat.rate();
       document.getElementById('poSubtotal').textContent = EDY.fmt.money(sub);
       document.getElementById('poVat').textContent = EDY.fmt.money(vat);
       document.getElementById('poTotal').textContent = EDY.fmt.money(sub + vat);
@@ -95,7 +95,7 @@ window.PAGE = {
     function calcTotal(po) {
       return (po.items || []).reduce((s, it) => s + (it.unitCost || 0) * it.quantity, 0);
     }
-    function calcVat(po) { return calcTotal(po) * 0.05; }
+    function calcVat(po) { return calcTotal(po) * EDY.vat.rate(); }
 
     function viewPO(id) {
       const po = purchases.find(x => x.id === id);
@@ -113,7 +113,7 @@ window.PAGE = {
         '<div class="col-3"><div class="muted fs-12">Payment</div><div class="fw-bold">' + esc(po.paymentMethod || 'CASH') + '</div></div></div>' +
         '<table class="table"><thead><tr><th>Product</th><th>Qty</th><th>Unit Cost</th><th>Total</th></tr></thead><tbody>' + rows + '</tbody></table>' +
         '<div class="d-flex justify-content-between fw-bold mt-2"><span>Subtotal</span><span>' + EDY.fmt.money(sub) + '</span></div>' +
-        '<div class="d-flex justify-content-between muted"><span>VAT (5%)</span><span>' + EDY.fmt.money(vat) + '</span></div>' +
+        '<div class="d-flex justify-content-between muted"><span>VAT (' + EDY.vat.pct() + '%)</span><span>' + EDY.fmt.money(vat) + '</span></div>' +
         '<div class="d-flex justify-content-between fw-bold fs-5 border-top mt-2 pt-2"><span>Total</span><span>' + EDY.fmt.money(sub + vat) + '</span></div>';
     }
 
@@ -173,7 +173,7 @@ window.PAGE = {
 
     document.getElementById('btnCsv').addEventListener('click', () => {
       const head = 'PO,Supplier,Date,Items,Subtotal,VAT,Total,Payment,Status';
-      const rows = purchases.map(p => ['PO-' + String(p.id).padStart(4, '0'), (p.supplier ? p.supplier.name : ''), p.invoiceDate, (p.items || []).reduce((s, it) => s + it.quantity, 0), calcTotal(p).toFixed(3), calcVat(p).toFixed(3), (calcTotal(p) + calcVat(p)).toFixed(3), p.paymentMethod || '', p.status || 'DRAFT']
+      const rows = purchases.map(p => ['PO-' + String(p.id).padStart(4, '0'), (p.supplier ? p.supplier.name : ''), p.invoiceDate, (p.items || []).reduce((s, it) => s + it.quantity, 0), EDY.fmt.amount(calcTotal(p)), EDY.fmt.amount(calcVat(p)), EDY.fmt.amount(calcTotal(p) + calcVat(p)), p.paymentMethod || '', p.status || 'DRAFT']
         .map(v => '"' + String(v ?? '').replace(/"/g, '""') + '"').join(','));
       const blob = new Blob(['\ufeff' + head + '\n' + rows.join('\n')], { type: 'text/csv;charset=utf-8' });
       const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'purchases.csv'; a.click();

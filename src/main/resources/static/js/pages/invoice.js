@@ -3,7 +3,8 @@ window.PAGE = {
   init: async function () {
     const box = document.getElementById('pageContent');
     const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    const get = (k, d) => localStorage.getItem('edy.' + k) || d;
+    // Server-side settings, loaded by layout.js. Same source as every other page.
+    const get = (k, d) => EDY.settings[k] ?? d;
 
     const qp = new URLSearchParams(location.search);
     const id = Number(qp.get('id'));
@@ -34,14 +35,17 @@ window.PAGE = {
     const total = Number(invoice.totalAmount || subtotal - discount + vat);
     const isCancelled = invoice.status === 'CANCELLED';
     const party = type === 'purchase' ? invoice.supplier : invoice.customer;
-    const currency = get('currency', 'OMR');
-    const currencySymbol = currency === 'USD' ? '$' : currency === 'SAR' ? 'SAR' : currency === 'AED' ? 'AED' : 'OMR';
-    const bizName = get('bizName', 'EDY ERP');
-    const bizAddr = get('bizAddress', 'Muscat, Oman');
-    const bizPhone = get('bizPhone', '+968 24XX XXXX');
-    const bizVat = get('bizVat', 'OM 123456789012345');
-    const rcptHeader = get('receiptHeader', bizName + ' \u2014 Main Branch');
-    const rcptFooter = get('receiptFooter', 'Thank you for your business! \u0634\u0643\u0631\u0627\u064b');
+    const bizName = get('biz.name', 'EDY ERP');
+    const bizAddr = get('biz.address', 'Muscat, Oman');
+    const bizPhone = get('biz.phone', '+968 24XX XXXX');
+    const bizVat = get('biz.vatNo', '');
+    const rcptHeader = get('receipt.header', bizName + ' \u2014 Main Branch');
+    const rcptFooter = get('receipt.footer', 'Thank you for your business! \u0634\u0643\u0631\u0627\u064b');
+
+    // Money goes through the shared formatter so the receipt, the tables and the
+    // dashboard all agree on currency and decimal places.
+    const money = EDY.fmt.money;
+    const vatPct = (Number(get('tax.vatRate', 0.05)) * 100).toLocaleString('en-US', { maximumFractionDigits: 4 });
 
     const invNum = invoice.invoiceNumber || (type === 'purchase' ? 'PO-' + String(id).padStart(4, '0') : type === 'quotation' ? 'QUO-' + String(id).padStart(4, '0') : 'INV-' + String(id).padStart(4, '0'));
     const method = invoice.paymentMethod || 'CASH';
@@ -61,7 +65,7 @@ window.PAGE = {
       '<div class="fw-bold fs-5">' + esc(rcptHeader) + '</div>' +
       '<div class="muted fs-12">' + esc(bizAddr) + '</div>' +
       '<div class="muted fs-12">' + esc(bizPhone) + '</div>' +
-      '<div class="muted fs-11">VAT: ' + esc(bizVat) + '</div>' +
+      (bizVat ? '<div class="muted fs-11">VAT: ' + esc(bizVat) + '</div>' : '') +
       '</div>' +
       '<hr class="my-2">' +
       '<div class="d-flex justify-content-between fs-13 mb-1"><span class="muted">' + (type === 'quotation' ? 'Quotation' : 'Invoice') + '</span><span class="fw-bold">' + esc(invNum) + '</span></div>' +
@@ -77,14 +81,14 @@ window.PAGE = {
         const name = (it.product && it.product.name) || it.productName || 'Product #' + it.productId;
         const price = it.unitPrice || it.unitCost || 0;
         const lineTotal = it.lineTotal || price * it.quantity;
-        return '<tr><td class="fw-bold">' + esc(name) + '</td><td class="text-center">' + it.quantity + '</td><td class="text-end">' + currencySymbol + ' ' + Number(price).toFixed(3) + '</td><td class="text-end">' + currencySymbol + ' ' + Number(lineTotal).toFixed(3) + '</td></tr>';
+        return '<tr><td class="fw-bold">' + esc(name) + '</td><td class="text-center">' + it.quantity + '</td><td class="text-end">' + esc(money(price)) + '</td><td class="text-end">' + esc(money(lineTotal)) + '</td></tr>';
       }).join('') +
       '</tbody></table>' +
       '<hr class="my-2">' +
-      '<div class="d-flex justify-content-between fs-13"><span class="muted">Subtotal</span><span>' + currencySymbol + ' ' + subtotal.toFixed(3) + '</span></div>' +
-      (discount > 0 ? '<div class="d-flex justify-content-between fs-13"><span class="muted">Discount</span><span class="text-red">\u2212' + currencySymbol + ' ' + discount.toFixed(3) + '</span></div>' : '') +
-      '<div class="d-flex justify-content-between fs-13"><span class="muted">VAT (5%)</span><span>' + currencySymbol + ' ' + vat.toFixed(3) + '</span></div>' +
-      '<div class="d-flex justify-content-between fw-bold fs-5 mt-2 pt-2 border-top"><span>Total</span><span>' + currencySymbol + ' ' + total.toFixed(3) + '</span></div>' +
+      '<div class="d-flex justify-content-between fs-13"><span class="muted">Subtotal</span><span>' + esc(money(subtotal)) + '</span></div>' +
+      (discount > 0 ? '<div class="d-flex justify-content-between fs-13"><span class="muted">Discount</span><span class="text-red">\u2212' + esc(money(discount)) + '</span></div>' : '') +
+      '<div class="d-flex justify-content-between fs-13"><span class="muted">VAT (' + esc(vatPct) + '%)</span><span>' + esc(money(vat)) + '</span></div>' +
+      '<div class="d-flex justify-content-between fw-bold fs-5 mt-2 pt-2 border-top"><span>Total</span><span>' + esc(money(total)) + '</span></div>' +
       '<hr class="my-2">' +
       '<div class="text-center fs-12 muted">' + esc(rcptFooter) + '</div>' +
       '<div class="text-center fs-11 muted mt-2">EDY ERP \u00a9 ' + new Date().getFullYear() + '</div>' +

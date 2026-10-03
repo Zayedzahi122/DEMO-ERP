@@ -153,7 +153,7 @@ window.PAGE = {
 
     document.getElementById('btnCsv').addEventListener('click', () => {
       const head = 'Name,Phone,Email,Address,Orders,Total Spent';
-      const rows = customers.map(c => { const st = stats(c.id); return [c.name, c.phone || '', c.email || '', c.address || '', st.count, st.total.toFixed(3)].map(v => '"' + String(v ?? '').replace(/"/g, '""') + '"').join(','); });
+      const rows = customers.map(c => { const st = stats(c.id); return [c.name, c.phone || '', c.email || '', c.address || '', st.count, EDY.fmt.amount(st.total)].map(v => '"' + String(v ?? '').replace(/"/g, '""') + '"').join(','); });
       const blob = new Blob(['\ufeff' + head + '\n' + rows.join('\n')], { type: 'text/csv;charset=utf-8' });
       const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'customers.csv'; a.click();
     });

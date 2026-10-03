@@ -104,7 +104,7 @@ window.EDY = window.EDY || {};
     if (!document.getElementById('edyRegOpen')) document.body.insertAdjacentHTML('beforeend', openModalHTML());
     if (!document.getElementById('edyRegClose')) document.body.insertAdjacentHTML('beforeend', closeModalHTML());
   }
-  function money(v) { try { return EDY.fmt.money(v); } catch (e) { return Number(v || 0).toFixed(3); } }
+  function money(v) { try { return EDY.fmt.money(v); } catch (e) { return EDY.fmt.amount(v); } }
 
   function bindOpenModal() {
     const save = document.getElementById('edRegOpenSave');
@@ -207,7 +207,7 @@ window.EDY = window.EDY || {};
         '</div>' +
         '<hr>' +
         '<label class="form-label">Counted Cash in Drawer (OMR)</label>' +
-        '<input type="number" min="0" step="0.001" class="form-control mb-3" id="edRegCounted" value="' + expectedCash().toFixed(3) + '" inputmode="decimal">' +
+        '<input type="number" min="0" step="0.001" class="form-control mb-3" id="edRegCounted" value="' + EDY.fmt.amount(expectedCash()) + '" inputmode="decimal">' +
         '<label class="form-label">Note</label><input class="form-control" id="edRegCloseNote" maxlength="120" placeholder="Optional note">';
       openM.show();
     });

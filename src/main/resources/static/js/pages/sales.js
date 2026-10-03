@@ -133,9 +133,9 @@ window.PAGE = {
           { key: 'invoiceDate', label: 'Date', date: true },
           { key: 'customer', label: 'Customer', render: (r) => {
             let name = '\u2014';
-            if (r.customer) name = r.customer.name;
-            else if (r.customerName) name = r.customerName;
-            else if (r.walkinName) name = r.walkinName + ' <span class="muted fs-12">(walk-in)</span>';
+            if (r.customer) name = esc(r.customer.name);
+            else if (r.customerName) name = esc(r.customerName);
+            else if (r.walkinName) name = esc(r.walkinName) + ' <span class="muted fs-12">(walk-in)</span>';
             return name; } },
           { key: 'paymentMethod', label: 'Payment', render: (r) => '<span title="' + esc(payMethodTitle(r)) + '">' + esc(payMethodLabel(r)) + '</span>' },
           { key: 'items', label: 'Items', render: (r) => Array.isArray(r.items) ? r.items.reduce((s, it) => s + it.quantity, 0) : 0 },
@@ -156,17 +156,29 @@ window.PAGE = {
             } },
           { key: 'status', label: 'Status', render: (r) => statusBadge(r.status) },
           { key: 'id', label: 'Actions', render: (r) =>
-            '<button class="btn btn-soft-primary btn-icon me-1" data-view="' + r.id + '" title="View / print"><i class="bi bi-eye"></i></button>' +
-            (r.status !== 'CANCELLED' ? '<button class="btn btn-soft-warning btn-icon me-1" data-edit="' + r.id + '" title="Edit sale"><i class="bi bi-pencil"></i></button>' : '') +
-            (r.status !== 'CANCELLED' ? '<button class="btn btn-soft-danger btn-icon" data-cancel="' + r.id + '" title="Cancel sale"><i class="bi bi-x-circle"></i></button>' : '') }
+            '<div class="dropdown">' +
+            '<button class="btn btn-primary btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">Actions</button>' +
+            '<ul class="dropdown-menu dropdown-menu-end">' +
+            '<li><a class="dropdown-item" href="#" data-view="' + r.id + '"><i class="bi bi-eye me-2"></i>View</a></li>' +
+            (r.status !== 'CANCELLED' ? '<li><a class="dropdown-item" href="#" data-edit="' + r.id + '"><i class="bi bi-pencil me-2"></i>Edit</a></li>' : '') +
+            (r.status !== 'CANCELLED' ? '<li><hr class="dropdown-divider"></li>' +
+              '<li><a class="dropdown-item text-danger" href="#" data-cancel="' + r.id + '"><i class="bi bi-x-circle me-2"></i>Cancel</a></li>' : '') +
+            '</ul></div>' }
         ],
         emptyText: 'No sales yet. Create one from POS or the New Sale button.'
       });
-
-      box.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => view(Number(b.dataset.view))));
-      box.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => editSale(Number(b.dataset.edit))));
-      box.querySelectorAll('[data-cancel]').forEach(b => b.addEventListener('click', () => cancel(Number(b.dataset.cancel))));
     }
+
+    // One delegated handler on the table: the rows are re-rendered on every
+    // filter/page change, so per-button listeners would not survive.
+    document.getElementById('sTable').addEventListener('click', function (e) {
+      const v = e.target.closest('[data-view]');
+      const ed = e.target.closest('[data-edit]');
+      const cx = e.target.closest('[data-cancel]');
+      if (v) { e.preventDefault(); view(Number(v.dataset.view)); }
+      else if (ed) { e.preventDefault(); editSale(Number(ed.dataset.edit)); }
+      else if (cx) { e.preventDefault(); cancel(Number(cx.dataset.cancel)); }
+    });
 
     function view(id) {
       const inv = invoices.find(i => i.id === id);
@@ -184,7 +196,7 @@ window.PAGE = {
         '<table class="table"><thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead><tbody>' + rows + '</tbody></table>' +
         '<div class="d-flex justify-content-between fw-bold"><span>Subtotal</span><span>' + EDY.fmt.money(inv.subtotal) + '</span></div>' +
         '<div class="d-flex justify-content-between muted"><span>Discount</span><span>\u2212' + EDY.fmt.money(inv.discount || 0) + '</span></div>' +
-        '<div class="d-flex justify-content-between muted"><span>VAT (5%)</span><span>' + EDY.fmt.money(inv.taxAmount || 0) + '</span></div>' +
+        '<div class="d-flex justify-content-between muted"><span>VAT (' + EDY.vat.pct() + '%)</span><span>' + EDY.fmt.money(inv.taxAmount || 0) + '</span></div>' +
         '<div class="d-flex justify-content-between fw-bold fs-5 border-top mt-2 pt-2"><span>Total</span><span>' + EDY.fmt.money(inv.totalAmount) + '</span></div>' +
         ((inv.payments && inv.payments.length)
           ? (inv.payments || []).map(p => '<div class="d-flex justify-content-between fs-13"><span class="muted">Paid (' + esc(p.method || 'CASH') + ')</span><span>' + EDY.fmt.money(p.amount) + '</span></div>').join('') : '') +
@@ -284,7 +296,7 @@ window.PAGE = {
           cust = findCust(custName);
           if (!cust) { cust = await EDY.api.post('/api/customers', { name: custName }); customers.push(cust); rc++; }
           const payload = {
-            customerId: cust ? cust.id : 1,
+            customerId: cust.id,
             invoiceDate: g.date || undefined,
             paymentMethod: g.pay || 'CASH',
             items: skuItems.map(it => ({ productId: it.prod.id, quantity: it.qty, unitPrice: it.price || undefined }))
@@ -341,7 +353,7 @@ window.PAGE = {
       '</tr></thead><tbody id="edItems"></tbody></table></div>' +
       '<div class="d-flex justify-content-between mt-2"><div class="muted fs-13" id="edItemCount">0 items</div>' +
         '<div class="text-end"><div class="muted fs-13">Subtotal: <span id="edSubtotal">\u2014</span></div>' +
-        '<div class="muted fs-13">VAT (5%): <span id="edTax">\u2014</span></div>' +
+        '<div class="muted fs-13">VAT (' + EDY.vat.pct() + '%): <span id="edTax">\u2014</span></div>' +
         '<div class="fw-bold fs-5">Total: <span id="edTotal" class="text-primary">\u2014</span></div></div>' +
       '</div>' +
       '<hr>' +
@@ -375,7 +387,6 @@ window.PAGE = {
     let editItems = [];
     let editPayMethod = 'CASH';
     let edStatusTouched = false;
-    const allProducts = products;
 
     function renderEditItems() {
       const tbody = document.getElementById('edItems');
@@ -411,7 +422,7 @@ window.PAGE = {
       const sub = editItems.reduce((s, it) => s + it.price * it.qty, 0);
       const disc = Math.min(Number(document.getElementById('edDiscount').value || 0), sub);
       const taxable = sub - disc;
-      const tax = taxable * 0.05;
+      const tax = taxable * EDY.vat.rate();
       document.getElementById('edItemCount').textContent = editItems.length + ' item' + (editItems.length === 1 ? '' : 's');
       document.getElementById('edSubtotal').textContent = EDY.fmt.money(sub);
       document.getElementById('edTax').textContent = EDY.fmt.money(tax);
@@ -502,16 +513,21 @@ window.PAGE = {
       const box = document.getElementById('edProdResults');
       if (!q) { box.innerHTML = ''; return; }
       const ql = q.toLowerCase();
-      const hits = allProducts.filter(p => (p.name + ' ' + (p.sku || '')).toLowerCase().includes(ql)).slice(0, 8);
+      // Read products at call time, not at init: the list is fetched at the
+      // bottom of init(), so caching it here would leave this permanently empty.
+      const hits = products.filter(p => (p.name + ' ' + (p.sku || '')).toLowerCase().includes(ql)).slice(0, 8);
       box.innerHTML = hits.map(p =>
         '<div class="d-flex align-items-center gap-2 p-1 px-2 rounded cursor-pointer ed-prod-pick" data-id="' + p.id + '" style="cursor:pointer">' +
         '<div class="text-primary"><i class="bi bi-box-seam"></i></div>' +
         '<div class="flex-grow-1 fs-13"><div class="fw-bold">' + esc(p.name) + '</div><div class="muted fs-11">' + esc(p.sku || '') + ' &middot; Stock: ' + p.quantityInStock + '</div></div>' +
         '<div class="fw-bold">' + EDY.fmt.money(p.unitPrice) + '</div></div>').join('');
       box.querySelectorAll('.ed-prod-pick').forEach(el => el.addEventListener('click', () => {
-        const p = allProducts.find(x => x.id === Number(el.dataset.id));
+        const p = products.find(x => x.id === Number(el.dataset.id));
         if (!p) return;
         const exist = editItems.find(it => it.productId === p.id);
+        // Same stock ceiling the +/- buttons use, so the picker cannot oversell.
+        const room = (exist ? exist.stock - exist.qty : Number(p.quantityInStock) || 0);
+        if (room <= 0) { EDY.ui.toast('Only ' + (exist ? exist.stock : p.quantityInStock) + ' in stock', 'warning'); return; }
         if (exist) { exist.qty++; } else {
           editItems.push({ productId: p.id, name: p.name, sku: p.sku, price: Number(p.unitPrice), qty: 1, stock: p.quantityInStock });
         }
