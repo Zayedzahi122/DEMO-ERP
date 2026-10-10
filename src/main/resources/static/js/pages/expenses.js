@@ -6,6 +6,8 @@ window.PAGE = {
     const today = new Date().toISOString().slice(0, 10);
 
     let entries = [];
+    /** The list as last filtered, so Print reports exactly what is on screen. */
+    let shownList = [];
 
     box.innerHTML =
       '<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-4">' +
@@ -26,6 +28,7 @@ window.PAGE = {
       '<div class="topbar-search" style="max-width:300px"><i class="bi bi-search"></i><input id="tblSearch" placeholder="Search description&hellip;"></div>' +
       '<select class="form-select w-auto" id="typeFilter"><option value="">All entries</option><option value="AUTO">Auto (from sales/purchases)</option><option value="MANUAL">Manual only</option></select>' +
       '<button class="btn btn-ghost ms-auto" id="btnCsv"><i class="bi bi-download me-1"></i>CSV</button>' +
+      '<button class="btn btn-ghost" id="btnPrint"><i class="bi bi-printer me-1"></i>Print</button>' +
       '</div>' +
       '<div class="table-wrap"><table class="table" id="eTable"></table></div>' +
       '</div></div>';
@@ -44,6 +47,7 @@ window.PAGE = {
       const tf = document.getElementById('typeFilter').value;
       if (tf === 'AUTO') list = expenses.filter(e => e.referenceType && e.referenceType !== 'MANUAL');
       if (tf === 'MANUAL') list = expenses.filter(e => !e.referenceType || e.referenceType === 'MANUAL');
+      shownList = list;
 
       EDY.ui.table({
         el: document.getElementById('eTable'),
@@ -60,11 +64,65 @@ window.PAGE = {
             return '<span class="badge bg-soft-gray">' + esc(r.referenceType) + '</span>'; } },
           { key: 'amount', label: 'Amount', money: true, className: 'fw-bold text-red' },
           { key: 'id', label: '', render: (r) => {
-            if (r.referenceType && r.referenceType !== 'MANUAL') return '';
-            return '<button class="btn btn-soft-danger btn-icon btn-sm" data-del="' + r.id + '" title="Delete"><i class="bi bi-trash"></i></button>'; } }
+            let html = '<button class="btn btn-ghost btn-icon btn-sm me-1" data-print="' + r.id + '" title="Preview and print"><i class="bi bi-printer"></i></button>';
+            if (r.referenceType && r.referenceType !== 'MANUAL') return html;
+            return html + '<button class="btn btn-soft-danger btn-icon btn-sm" data-del="' + r.id + '" title="Delete"><i class="bi bi-trash"></i></button>'; } }
         ]
       });
       box.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => remove(Number(b.dataset.del))));
+      box.querySelectorAll('[data-print]').forEach(b => b.addEventListener('click', () => printExpense(Number(b.dataset.print))));
+    }
+
+    /**
+     * One expense as a voucher. Auto entries name the document they came from,
+     * because "Cost of goods — 12.00" means nothing to whoever is checking the book
+     * unless it says which sale produced it.
+     */
+    function printExpense(id) {
+      const e = entries.find(x => x.id === id);
+      if (!e) return;
+      const source = (!e.referenceType || e.referenceType === 'MANUAL')
+        ? 'Manual'
+        : (e.referenceType === 'PURCHASE_INVOICE' ? 'Purchase' :
+           e.referenceType === 'SALES_INVOICE' ? 'Sale' : e.referenceType);
+      EDY.print.preview({
+        title: e.description || 'Expense',
+        subtitle: 'Expense voucher \u00b7 ' + (e.entryDate || ''),
+        html: EDY.print.record('Expense voucher', e.entryDate || '', [
+          ['Date', e.entryDate || '\u2014'],
+          ['Description', e.description || '\u2014'],
+          ['Source', source],
+          ['Reference', e.referenceId ? String(e.referenceType) + ' #' + e.referenceId : '\u2014'],
+          ['Amount', EDY.fmt.money(e.amount)]
+        ])
+      });
+    }
+
+    /** The filtered expense list as a document — what the CSV button exports, on paper. */
+    function printList() {
+      const list = shownList || [];
+      if (!list.length) { EDY.ui.toast('Nothing to print', 'warning'); return; }
+      const total = list.reduce((s, e) => s + Number(e.amount || 0), 0);
+      EDY.print.preview({
+        title: 'Expenses',
+        subtitle: list.length + ' entries',
+        html: EDY.print.list('Expense report', [
+          { label: 'Date' },
+          { label: 'Description' },
+          { label: 'Source' },
+          { label: 'Amount', align: 'r' }
+        ], list.map(e => [
+          esc(e.entryDate || ''),
+          esc(e.description || ''),
+          esc((!e.referenceType || e.referenceType === 'MANUAL') ? 'Manual' : e.referenceType),
+          esc(EDY.fmt.money(e.amount))
+        ]), {
+          summary: [
+            { label: 'Entries', value: String(list.length) },
+            { label: 'Total', value: EDY.fmt.money(total), bold: true }
+          ]
+        })
+      });
     }
 
     async function remove(id) {
@@ -105,6 +163,8 @@ window.PAGE = {
     });
 
     document.getElementById('typeFilter').addEventListener('change', render);
+
+    document.getElementById('btnPrint').addEventListener('click', printList);
 
     document.getElementById('btnCsv').addEventListener('click', () => {
       const expenses = entries.filter(e => e.type === 'EXPENSE');

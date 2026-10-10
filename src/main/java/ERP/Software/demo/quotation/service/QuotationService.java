@@ -1,5 +1,6 @@
 package ERP.Software.demo.quotation.service;
 
+import ERP.Software.demo.business.service.TenantContext;
 import ERP.Software.demo.common.exception.ResourceNotFoundException;
 import ERP.Software.demo.common.money.Totals;
 import ERP.Software.demo.inventory.model.Product;
@@ -34,14 +35,20 @@ public class QuotationService {
     private final ProductService productService;
     private final SalesInvoiceService salesInvoiceService;
     private final SettingsService settingsService;
+    private final TenantContext tenant;
 
     public List<Quotation> findAll() {
-        return quotationRepository.findAll();
+        Long businessId = tenant.idOrNull();
+        return businessId == null
+                ? quotationRepository.findAllByOrderByQuotationDateDescIdDesc()
+                : quotationRepository.findAllByBusinessIdOrderByQuotationDateDescIdDesc(businessId);
     }
 
     public Quotation findById(Long id) {
-        return quotationRepository.findById(id)
+        Quotation quotation = quotationRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Quotation not found: " + id));
+        tenant.check(quotation.getBusinessId(), "quotation");
+        return quotation;
     }
 
     @Transactional
@@ -60,6 +67,7 @@ public class QuotationService {
                 .taxAmount(BigDecimal.ZERO)
                 .totalAmount(BigDecimal.ZERO)
                 .build();
+        tenant.stamp(quotation);
 
         BigDecimal subtotal = BigDecimal.ZERO;
         for (QuotationRequest.Item itemReq : request.getItems()) {
@@ -79,7 +87,8 @@ public class QuotationService {
 
         // Shared with sales/purchases: caps the discount at the subtotal and
         // rounds to the decimal scale configured in Settings.
-        Totals.Result t = Totals.of(subtotal, quotation.getDiscount(), settingsService.vatRate(), settingsService.moneyScale());
+        Totals.Result t = Totals.of(subtotal, quotation.getDiscount(), settingsService.taxRate(),
+                settingsService.moneyScale(), settingsService.taxInclusive());
 
         quotation.setSubtotal(t.subtotal());
         quotation.setDiscount(t.discount());
@@ -88,13 +97,24 @@ public class QuotationService {
         return quotationRepository.save(quotation);
     }
 
+    private static final String WALK_IN = "Walk-in Customer";
+
     private Customer resolveCustomer(Long customerId) {
+        Long businessId = tenant.id();
         if (customerId != null) {
-            return customerRepository.findById(customerId)
+            Customer customer = customerRepository.findById(customerId)
                     .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + customerId));
+            tenant.check(customer.getBusinessId(), "customer");
+            return customer;
         }
-        return customerRepository.findByName("Walk-in Customer")
-                .orElseGet(() -> customerRepository.save(Customer.builder().name("Walk-in Customer").build()));
+        return customerRepository.findByBusinessIdAndName(businessId, WALK_IN)
+                .orElseGet(this::createWalkIn);
+    }
+
+    private Customer createWalkIn() {
+        Customer customer = Customer.builder().name(WALK_IN).build();
+        tenant.stamp(customer);
+        return customerRepository.save(customer);
     }
 
     @Transactional

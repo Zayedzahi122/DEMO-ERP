@@ -1,5 +1,6 @@
 package ERP.Software.demo.inventory.controller;
 
+import ERP.Software.demo.business.service.TenantContext;
 import ERP.Software.demo.inventory.model.Product;
 import ERP.Software.demo.inventory.model.StockMovement;
 import ERP.Software.demo.inventory.repository.StockMovementRepository;
@@ -19,6 +20,7 @@ public class ProductController {
 
     private final ProductService productService;
     private final StockMovementRepository stockMovementRepository;
+    private final TenantContext tenant;
 
     @GetMapping
     public List<Product> getAll() {
@@ -61,13 +63,17 @@ public class ProductController {
         int delta = ((Number) body.getOrDefault("delta", 0)).intValue();
         String note = body.get("note") != null ? body.get("note").toString() : "Manual adjustment";
         Product product = productService.adjustStock(id, delta);
-        stockMovementRepository.save(StockMovement.builder()
+        StockMovement movement = StockMovement.builder()
                 .product(product)
                 .type(delta >= 0 ? "IN" : "OUT")
                 .quantity(Math.abs(delta))
                 .note(note)
                 .reference("MANUAL")
-                .build());
+                .build();
+        // Without this the movement would belong to no business and never show up
+        // in any business's inventory history.
+        tenant.stamp(movement);
+        stockMovementRepository.save(movement);
         return product;
     }
 }

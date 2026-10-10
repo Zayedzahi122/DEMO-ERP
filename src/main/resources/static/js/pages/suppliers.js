@@ -41,13 +41,65 @@ window.PAGE = {
           { key: 'total', label: 'Total Purchases', render: (r) => '<span class="fw-bold text-blue">' + EDY.fmt.money(r.total) + '</span>' },
           { key: 'id', label: 'Actions', render: (r) =>
             '<button class="btn btn-soft-primary btn-icon me-1" data-view="' + r.id + '" title="View"><i class="bi bi-eye"></i></button>' +
+            '<button class="btn btn-ghost btn-icon me-1" data-print="' + r.id + '" title="Preview and print"><i class="bi bi-printer"></i></button>' +
             '<button class="btn btn-ghost btn-icon me-1" data-edit="' + r.id + '" title="Edit"><i class="bi bi-pencil"></i></button>' +
             '<button class="btn btn-soft-danger btn-icon" data-del="' + r.id + '" title="Delete"><i class="bi bi-trash"></i></button>' }
         ]
       });
       box.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => showDetail(Number(b.dataset.view))));
+      box.querySelectorAll('[data-print]').forEach(b => b.addEventListener('click', () => printSupplier(Number(b.dataset.print))));
       box.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => openEdit(Number(b.dataset.edit))));
       box.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => remove(Number(b.dataset.del))));
+    }
+
+    /** Total of a purchase as stored, falling back to the lines if it never saved one. */
+    function poTotal(p) {
+      const stored = Number(p.totalAmount);
+      if (Number.isFinite(stored)) return stored;
+      return (p.items || []).reduce((s, it) => s + Number(it.unitCost || 0) * Number(it.quantity || 0), 0);
+    }
+
+    /** The supplier and what has been bought from them, as one page. */
+    function printSupplier(id) {
+      const s = suppliers.find(x => x.id === id);
+      if (!s) return;
+      const st = stats(id);
+      const ps = purchases.filter(p => p.supplier && p.supplier.id === id).sort((a, b) => (b.id || 0) - (a.id || 0));
+      const history = EDY.print.list('Purchase history', [
+        { label: 'Order' },
+        { label: 'Date' },
+        { label: 'Total', align: 'r' },
+        { label: 'Status' }
+      ], ps.map(p => [
+        'PO-' + String(p.id).padStart(4, '0'),
+        esc(p.invoiceDate || '\u2014'),
+        esc(EDY.fmt.money(poTotal(p))),
+        esc(p.status || 'DRAFT')
+      ]), {
+        bare: true,
+        summary: [
+          { label: 'Orders', value: String(st.count) },
+          { label: 'Total purchases', value: EDY.fmt.money(st.total), bold: true }
+        ]
+      });
+
+      EDY.print.preview({
+        title: s.name,
+        subtitle: 'Supplier record',
+        html: EDY.print.record('Supplier record', s.name, [
+          ['Name', s.name],
+          ['Phone', s.phone || '\u2014'],
+          ['Email', s.email || '\u2014'],
+          ['Address', s.address || '\u2014'],
+          ['Notes', s.notes || '\u2014'],
+          ['Total orders', String(st.count)],
+          ['Total purchases', EDY.fmt.money(st.total)]
+        ], {
+          bodyLabel: 'Purchase history',
+          body: ps.length ? history
+            : '<div style="font-size:12px;color:#64748b">No purchase orders yet.</div>'
+        })
+      });
     }
 
     function fillForm(s) {

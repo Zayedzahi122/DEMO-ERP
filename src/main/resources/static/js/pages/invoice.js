@@ -19,12 +19,32 @@ window.PAGE = {
     box.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary"></div></div>';
 
     let invoice = null;
+    const listUrl = type === 'purchase' ? '/api/purchase-invoices'
+                  : type === 'quotation' ? '/api/quotations'
+                  : '/api/sales-invoices';
     try {
-      if (type === 'purchase') invoice = await EDY.api.get('/api/purchase-invoices/' + id);
-      else if (type === 'quotation') invoice = await EDY.api.get('/api/quotations/' + id);
-      else invoice = await EDY.api.get('/api/sales-invoices/' + id);
+      invoice = await EDY.api.get(listUrl + '/' + id);
     } catch (e) {
-      box.innerHTML = '<div class="empty-state"><i class="bi bi-file-x" style="font-size:3rem"></i><h5 class="mt-3">' + (type === 'quotation' ? 'Quotation' : 'Invoice') + ' not found</h5><p class="muted">This ' + (type === 'quotation' ? 'quotation' : 'record') + ' may have been deleted.</p></div>';
+      // The single-record endpoint insists on one business, so a super admin who is
+      // looking at every business at once is refused here even though the dashboard
+      // and the quotation dialog both just handed them a document from the list.
+      // That same session is already allowed to read the whole list, so take the row
+      // from it - the same data, no new authority - instead of leaving a document on
+      // screen that cannot be opened or printed. Anything else stays "not found".
+      if (e && /permission/i.test(e.message || '')) {
+        try {
+          const all = await EDY.api.get(listUrl);
+          invoice = (all || []).find(x => x.id === id) || null;
+        } catch (ignored) { invoice = null; }
+      }
+      if (!invoice) {
+        box.innerHTML = '<div class="empty-state"><i class="bi bi-file-x" style="font-size:3rem"></i><h5 class="mt-3">' + (type === 'quotation' ? 'Quotation' : 'Invoice') + ' not found</h5><p class="muted">This ' + (type === 'quotation' ? 'quotation' : 'record') + ' may have been deleted.</p></div>';
+        return;
+      }
+    }
+
+    if (!invoice) {
+      box.innerHTML = '<div class="empty-state"><i class="bi bi-file-x" style="font-size:3rem"></i><h5 class="mt-3">Invoice not found</h5><p class="muted">This record may have been deleted.</p></div>';
       return;
     }
 
@@ -35,17 +55,18 @@ window.PAGE = {
     const total = Number(invoice.totalAmount || subtotal - discount + vat);
     const isCancelled = invoice.status === 'CANCELLED';
     const party = type === 'purchase' ? invoice.supplier : invoice.customer;
-    const bizName = get('biz.name', 'EDY ERP');
-    const bizAddr = get('biz.address', 'Muscat, Oman');
-    const bizPhone = get('biz.phone', '+968 24XX XXXX');
+    const bizName = get('biz.name', '');
+    const bizAddr = get('biz.address', '');
+    const bizPhone = get('biz.phone', '');
     const bizVat = get('biz.vatNo', '');
-    const rcptHeader = get('receipt.header', bizName + ' \u2014 Main Branch');
-    const rcptFooter = get('receipt.footer', 'Thank you for your business! \u0634\u0643\u0631\u0627\u064b');
+    // No invented branch or address: Settings writes these, and a receipt that
+    // prints a company the business never named is a lie on paper.
+    const rcptHeader = get('receipt.header', '') || bizName;
+    const rcptFooter = get('receipt.footer', '');
 
     // Money goes through the shared formatter so the receipt, the tables and the
     // dashboard all agree on currency and decimal places.
     const money = EDY.fmt.money;
-    const vatPct = (Number(get('tax.vatRate', 0.05)) * 100).toLocaleString('en-US', { maximumFractionDigits: 4 });
 
     const invNum = invoice.invoiceNumber || (type === 'purchase' ? 'PO-' + String(id).padStart(4, '0') : type === 'quotation' ? 'QUO-' + String(id).padStart(4, '0') : 'INV-' + String(id).padStart(4, '0'));
     const method = invoice.paymentMethod || 'CASH';
@@ -58,7 +79,6 @@ window.PAGE = {
       '<button class="btn btn-ghost btn-sm" id="btnPdf"><i class="bi bi-file-earmark-pdf me-1"></i>Save PDF</button>' +
       '<button class="btn btn-primary" id="btnPrint"><i class="bi bi-printer me-1"></i>Print</button>' +
       '</div></div>' +
-
       '<div class="receipt-paper mx-auto" style="max-width:380px; background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:24px 20px;" id="receiptPaper">' +
       (isCancelled ? '<div class="text-center text-danger fw-bold mb-3 py-2 border border-danger rounded">CANCELLED</div>' : '') +
       '<div class="text-center mb-3">' +
@@ -87,37 +107,34 @@ window.PAGE = {
       '<hr class="my-2">' +
       '<div class="d-flex justify-content-between fs-13"><span class="muted">Subtotal</span><span>' + esc(money(subtotal)) + '</span></div>' +
       (discount > 0 ? '<div class="d-flex justify-content-between fs-13"><span class="muted">Discount</span><span class="text-red">\u2212' + esc(money(discount)) + '</span></div>' : '') +
-      '<div class="d-flex justify-content-between fs-13"><span class="muted">VAT (' + esc(vatPct) + '%)</span><span>' + esc(money(vat)) + '</span></div>' +
+      (vat > 0 ? '<div class="d-flex justify-content-between fs-13"><span class="muted">VAT</span><span>' + esc(money(vat)) + '</span></div>' : '') +
       '<div class="d-flex justify-content-between fw-bold fs-5 mt-2 pt-2 border-top"><span>Total</span><span>' + esc(money(total)) + '</span></div>' +
       '<hr class="my-2">' +
       '<div class="text-center fs-12 muted">' + esc(rcptFooter) + '</div>' +
       '<div class="text-center fs-11 muted mt-2">EDY ERP \u00a9 ' + new Date().getFullYear() + '</div>' +
       '</div>';
 
-    function printReceipt() {
-      const paper = document.getElementById('receiptPaper');
-      const printWin = window.open('', '_blank', 'width=420,height=800');
-      if (printWin) {
-        printWin.document.write('<html><head><title>' + esc(invNum) + '</title><style>' +
-          'body{font-family:monospace;max-width:380px;margin:0 auto;padding:16px;font-size:13px;color:#000}' +
-          'table{width:100%;border-collapse:collapse}th,td{padding:2px 4px;text-align:left}th{font-weight:600}' +
-          '.text-center{text-align:center}.text-end,.text-right{text-align:right}.text-red{color:#ef4444}' +
-          '.text-danger{color:#dc2626}.text-primary{color:#2563eb}.text-green{color:#10b981}' +
-          '.fw-bold{font-weight:700}.fw-semibold{font-weight:600}.muted{color:#64748b}' +
-          'hr{border:none;border-top:1px dashed #cbd5e1;margin:8px 0}' +
-          '.table{margin-bottom:8px}.table td{border-bottom:1px dashed #e2e8f0}' +
-          'h1,h2,h3,h4,h5,h6{margin:0}.mb-1{margin-bottom:4px}.mb-2{margin-bottom:8px}.mb-3{margin-bottom:12px}' +
-          '.mt-2{margin-top:8px}.pt-2{padding-top:8px}.py-2{padding:8px 0}.border-top{border-top:1px solid #e2e8f0}' +
-          '.border{border:1px solid #e2e8f0}.rounded{border-radius:4px}' +
-          '@media print{@page{size:80mm auto; margin:2mm}body{padding:0;font-size:11px}}' +
-          '</style></head><body>' + paper.innerHTML + '<script>window.onload=function(){setTimeout(function(){window.print();window.close()},200)}<\/script></body></html>');
-        printWin.document.close();
-      }
+    /**
+     * Printing used to open a blank window and fire print() on load, so the first
+     * sight of the document was whatever came out of the printer. Now both buttons
+     * — and the `print=1` link POS uses after a sale — open the preview, where A4
+     * and thermal receipt are a choice made with the page in front of you.
+     */
+    function openPreview() {
+      EDY.print.preview({
+        title: invNum,
+        subtitle: (type === 'quotation' ? 'Quotation' : type === 'purchase' ? 'Purchase invoice' : 'Sales invoice') + ' \u00b7 ' + dateStr,
+        formats: [
+          { id: 'receipt', label: 'Receipt (80mm)' },
+          { id: 'a4', label: 'A4 invoice' }
+        ],
+        build: (fmt) => EDY.print.invoice(invoice, { type: type, format: fmt })
+      });
     }
 
-    document.getElementById('btnPrint').addEventListener('click', printReceipt);
-    document.getElementById('btnPdf').addEventListener('click', printReceipt);
-    if (autoPrint) setTimeout(printReceipt, 400);
+    document.getElementById('btnPrint').addEventListener('click', openPreview);
+    document.getElementById('btnPdf').addEventListener('click', openPreview);
+    if (autoPrint) setTimeout(openPreview, 300);
 
     document.title = invNum + ' \u2014 EDY ERP';
   }

@@ -36,3 +36,8 @@ build/
 hs_err_pid*.log
 replay_pid*.log
 hs_err_pid*.hprof
+
+### local run artifacts ###
+run.log
+run.err
+boot.log

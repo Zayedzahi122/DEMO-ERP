@@ -34,10 +34,10 @@ window.PAGE = {
 
     function calcPoTotal() {
       const sub = poLines.reduce((s, l) => s + l.qty * l.cost, 0);
-      const vat = sub * EDY.vat.rate();
+      const t = EDY.vat.split(sub);
       document.getElementById('poSubtotal').textContent = EDY.fmt.money(sub);
-      document.getElementById('poVat').textContent = EDY.fmt.money(vat);
-      document.getElementById('poTotal').textContent = EDY.fmt.money(sub + vat);
+      document.getElementById('poVat').textContent = EDY.fmt.money(t.tax);
+      document.getElementById('poTotal').textContent = EDY.fmt.money(t.total);
     }
 
     function renderPoLines() {
@@ -84,18 +84,46 @@ window.PAGE = {
           { key: 'status', label: 'Status', render: (r) => statusBadge(r.status) },
           { key: 'id2', label: 'Actions', render: (r) => {
             let html = '<button class="btn btn-soft-primary btn-icon me-1" data-view="' + r.id + '" title="View"><i class="bi bi-eye"></i></button>';
+            html += '<button class="btn btn-ghost btn-icon me-1" data-print="' + r.id + '" title="Preview and print"><i class="bi bi-printer"></i></button>';
             if (r.status === 'DRAFT' || !r.status) html += '<button class="btn btn-soft-green btn-icon me-1" data-complete="' + r.id + '" title="Complete"><i class="bi bi-check-circle"></i></button>';
             return html; } }
         ]
       });
       box.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => viewPO(Number(b.dataset.view))));
+      box.querySelectorAll('[data-print]').forEach(b => b.addEventListener('click', () => printPO(Number(b.dataset.print))));
       box.querySelectorAll('[data-complete]').forEach(b => b.addEventListener('click', () => complete(Number(b.dataset.complete))));
     }
 
+    /** The purchase as a document — A4 for the file, receipt if it travelled with the goods. */
+    function printPO(id) {
+      const po = purchases.find(x => x.id === id);
+      if (!po) return;
+      const doc = Object.assign({}, po, {
+        invoiceNumber: po.invoiceNumber || ('PO-' + String(po.id).padStart(4, '0')),
+        totalAmount: calcTotal(po),
+        taxAmount: calcVat(po),
+        subtotal: Number(po.subtotal) || (po.items || []).reduce((s, it) => s + (it.unitCost || 0) * it.quantity, 0)
+      });
+      EDY.print.preview({
+        title: doc.invoiceNumber,
+        subtitle: 'Purchase invoice \u00b7 ' + (po.invoiceDate || ''),
+        formats: [
+          { id: 'a4', label: 'A4 invoice' },
+          { id: 'receipt', label: 'Receipt (80mm)' }
+        ],
+        build: (fmt) => EDY.print.invoice(doc, { type: 'purchase', format: fmt })
+      });
+    }
+
+    /* A saved purchase carries its own subtotal/tax/total. Read those rather than
+       recomputing from today's rate, which would silently rewrite history when
+       the tax setting is changed later. */
     function calcTotal(po) {
+      const stored = Number(po.totalAmount);
+      if (Number.isFinite(stored)) return stored;
       return (po.items || []).reduce((s, it) => s + (it.unitCost || 0) * it.quantity, 0);
     }
-    function calcVat(po) { return calcTotal(po) * EDY.vat.rate(); }
+    function calcVat(po) { return Number(po.taxAmount) || 0; }
 
     function viewPO(id) {
       const po = purchases.find(x => x.id === id);
@@ -104,8 +132,9 @@ window.PAGE = {
       const rows = (po.items || []).map(it =>
         '<tr><td>' + esc((it.product && it.product.name) || 'Product #' + it.productId) + '</td><td>' + it.quantity + '</td><td>' + EDY.fmt.money(it.unitCost) + '</td><td>' + EDY.fmt.money(it.unitCost * it.quantity) + '</td></tr>'
       ).join('') || '<tr><td colspan="4" class="muted text-center">No items</td></tr>';
-      const sub = calcTotal(po);
+      const sub = Number(po.subtotal) || 0;
       const vat = calcVat(po);
+      const grand = calcTotal(po);
       document.getElementById('viewPOBody').innerHTML =
         '<div class="d-flex justify-content-between mb-3"><div class="fw-bold fs-5">PO-' + EDY.fmt.num(po.id).padStart(4, '0') + '</div>' + statusBadge(po.status) + '</div>' +
         '<div class="row mb-3"><div class="col-6"><div class="muted fs-12">Supplier</div><div class="fw-bold">' + esc(po.supplier ? po.supplier.name : '\u2014') + '</div></div>' +
@@ -113,8 +142,8 @@ window.PAGE = {
         '<div class="col-3"><div class="muted fs-12">Payment</div><div class="fw-bold">' + esc(po.paymentMethod || 'CASH') + '</div></div></div>' +
         '<table class="table"><thead><tr><th>Product</th><th>Qty</th><th>Unit Cost</th><th>Total</th></tr></thead><tbody>' + rows + '</tbody></table>' +
         '<div class="d-flex justify-content-between fw-bold mt-2"><span>Subtotal</span><span>' + EDY.fmt.money(sub) + '</span></div>' +
-        '<div class="d-flex justify-content-between muted"><span>VAT (' + EDY.vat.pct() + '%)</span><span>' + EDY.fmt.money(vat) + '</span></div>' +
-        '<div class="d-flex justify-content-between fw-bold fs-5 border-top mt-2 pt-2"><span>Total</span><span>' + EDY.fmt.money(sub + vat) + '</span></div>';
+        (vat > 0 ? '<div class="d-flex justify-content-between muted"><span>VAT</span><span>' + EDY.fmt.money(vat) + '</span></div>' : '') +
+        '<div class="d-flex justify-content-between fw-bold fs-5 border-top mt-2 pt-2"><span>Total</span><span>' + EDY.fmt.money(grand) + '</span></div>';
     }
 
     async function complete(id) {
@@ -173,7 +202,7 @@ window.PAGE = {
 
     document.getElementById('btnCsv').addEventListener('click', () => {
       const head = 'PO,Supplier,Date,Items,Subtotal,VAT,Total,Payment,Status';
-      const rows = purchases.map(p => ['PO-' + String(p.id).padStart(4, '0'), (p.supplier ? p.supplier.name : ''), p.invoiceDate, (p.items || []).reduce((s, it) => s + it.quantity, 0), EDY.fmt.amount(calcTotal(p)), EDY.fmt.amount(calcVat(p)), EDY.fmt.amount(calcTotal(p) + calcVat(p)), p.paymentMethod || '', p.status || 'DRAFT']
+      const rows = purchases.map(p => ['PO-' + String(p.id).padStart(4, '0'), (p.supplier ? p.supplier.name : ''), p.invoiceDate, (p.items || []).reduce((s, it) => s + it.quantity, 0), EDY.fmt.amount(p.subtotal || 0), EDY.fmt.amount(calcVat(p)), EDY.fmt.amount(calcTotal(p)), p.paymentMethod || '', p.status || 'DRAFT']
         .map(v => '"' + String(v ?? '').replace(/"/g, '""') + '"').join(','));
       const blob = new Blob(['\ufeff' + head + '\n' + rows.join('\n')], { type: 'text/csv;charset=utf-8' });
       const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'purchases.csv'; a.click();

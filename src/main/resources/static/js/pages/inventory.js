@@ -58,10 +58,13 @@ window.PAGE = {
           { key: 'quantityInStock', label: 'Stock', render: (r) => '<span class="fw-bold ' + (r.quantityInStock <= 0 ? 'text-danger' : '') + '">' + EDY.fmt.num(r.quantityInStock) + '</span>' },
           { key: 'reorderLevel', label: 'Min', render: (r) => EDY.fmt.num(r.reorderLevel || 0) },
           { key: 'status', label: 'Status', render: (r) => stockBadge(r) },
-          { key: 'id', label: 'Actions', render: (r) => '<button class="btn btn-soft-primary btn-icon" data-adj="' + r.id + '" title="Adjust"><i class="bi bi-sliders"></i></button>' }
+          { key: 'id', label: 'Actions', render: (r) =>
+            '<button class="btn btn-soft-primary btn-icon me-1" data-adj="' + r.id + '" title="Adjust"><i class="bi bi-sliders"></i></button>' +
+            '<button class="btn btn-ghost btn-icon" data-print="' + r.id + '" title="Preview and print"><i class="bi bi-printer"></i></button>' }
         ]
       });
       box.querySelectorAll('[data-adj]').forEach(b => b.addEventListener('click', () => openAdjust(Number(b.dataset.adj))));
+      box.querySelectorAll('[data-print]').forEach(b => b.addEventListener('click', () => printStockCard(Number(b.dataset.print))));
 
       movTable = EDY.ui.table({
         el: document.getElementById('movTable'),
@@ -97,6 +100,52 @@ window.PAGE = {
     document.getElementById('btnMovCsv').addEventListener('click', () =>
       exportCsv('movements.csv', movements, 'Date,Product,Type,Quantity,Reason',
         m => [m.timestamp, (m.productName || (m.product ? m.product.name : '') || ''), m.type, m.quantity, (m.reason || m.note || '')].map(v => '"' + String(v ?? '').replace(/"/g, '""') + '"').join(',')));
+
+    /**
+     * A stock card: where one product stands today and how it got there. The
+     * movement history is included because "who moved 12 units and why" is the
+     * question this screen exists to answer, and a printed card without it would
+     * only restate the quantity.
+     */
+    function printStockCard(id) {
+      const p = products.find(x => x.id === id);
+      if (!p) return;
+      const qty = Number(p.quantityInStock || 0);
+      const mine = movements.filter(m =>
+        (m.productId === id) || (m.product && m.product.id === id) ||
+        (m.productName && m.productName === p.name)
+      ).sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')));
+      const history = EDY.print.list('Movements', [
+        { label: 'When' },
+        { label: 'Type', align: 'c' },
+        { label: 'Qty', align: 'r' },
+        { label: 'Reason' }
+      ], mine.map(m => [
+        esc(String(m.timestamp || '').replace('T', ' ').slice(0, 16)),
+        m.type === 'IN' ? 'Stock in' : 'Stock out',
+        esc((m.type === 'IN' ? '+' : '\u2212') + EDY.fmt.num(m.quantity)),
+        esc(m.reason || m.note || '\u2014')
+      ]), { bare: true });
+
+      EDY.print.preview({
+        title: p.name,
+        subtitle: 'Stock card \u00b7 ' + (p.sku || 'no SKU'),
+        html: EDY.print.record('Stock card', p.sku || '', [
+          ['SKU', p.sku || '\u2014'],
+          ['Name', p.name],
+          ['Category', p.category ? p.category.name : '\u2014'],
+          ['Quantity on hand', EDY.fmt.num(qty)],
+          ['Reorder level', EDY.fmt.num(p.reorderLevel || 0)],
+          ['Cost price', EDY.fmt.money(p.costPrice)],
+          ['Value at cost', EDY.fmt.money(qty * Number(p.costPrice || 0))],
+          ['Status', qty <= 0 ? 'Out of stock' : (qty <= Number(p.reorderLevel || 0) ? 'Low stock' : 'In stock')]
+        ], {
+          bodyLabel: 'Movement history',
+          body: mine.length ? history
+            : '<div style="font-size:12px;color:#64748b">No stock movements yet.</div>'
+        })
+      });
+    }
 
     function openAdjust(id) {
       const p = products.find(x => x.id === id);

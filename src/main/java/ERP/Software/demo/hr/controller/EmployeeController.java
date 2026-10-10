@@ -1,5 +1,6 @@
 package ERP.Software.demo.hr.controller;
 
+import ERP.Software.demo.business.service.TenantContext;
 import ERP.Software.demo.common.exception.ResourceNotFoundException;
 import ERP.Software.demo.hr.model.Employee;
 import ERP.Software.demo.hr.repository.EmployeeRepository;
@@ -16,20 +17,27 @@ import java.util.List;
 public class EmployeeController {
 
     private final EmployeeRepository employeeRepository;
+    private final TenantContext tenant;
 
     @GetMapping
     public List<Employee> getAll() {
-        return employeeRepository.findAll();
+        Long businessId = tenant.idOrNull();
+        return businessId == null
+                ? employeeRepository.findAllByOrderByFirstNameAsc()
+                : employeeRepository.findAllByBusinessIdOrderByFirstNameAsc(businessId);
     }
 
     @GetMapping("/{id}")
     public Employee getOne(@PathVariable Long id) {
-        return employeeRepository.findById(id)
+        Employee employee = employeeRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Employee not found: " + id));
+        tenant.check(employee.getBusinessId(), "employee");
+        return employee;
     }
 
     @PostMapping
     public ResponseEntity<Employee> create(@Valid @RequestBody Employee employee) {
+        tenant.stamp(employee);
         return ResponseEntity.ok(employeeRepository.save(employee));
     }
 

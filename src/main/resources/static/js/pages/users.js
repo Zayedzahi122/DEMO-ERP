@@ -139,13 +139,37 @@ window.PAGE = {
           { key: 'active', label: 'Status', render: (r) => r.active !== false ? '<span class="badge bg-soft-green">Active</span>' : '<span class="badge bg-soft-gray">Inactive</span>' },
           { key: 'id', label: 'Actions', render: (r) => isAdmin
             ? '<button class="btn btn-soft-primary btn-icon me-1" data-edit="' + r.id + '" title="Edit"><i class="bi bi-pencil"></i></button>' +
+              '<button class="btn btn-ghost btn-icon me-1" data-print="' + r.id + '" title="Preview and print"><i class="bi bi-printer"></i></button>' +
               '<button class="btn btn-soft-danger btn-icon" data-del="' + r.id + '" title="Delete"><i class="bi bi-trash"></i></button>'
             : '<span class="muted fs-12">&mdash;</span>' }
         ]
       });
       if (!isAdmin) return;
       box.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => openEdit(Number(b.dataset.edit))));
+      box.querySelectorAll('[data-print]').forEach(b => b.addEventListener('click', () => printUser(Number(b.dataset.print))));
       box.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => removeRole(Number(b.dataset.del))));
+    }
+
+    /**
+     * A user's access on paper — role, branch, status. Deliberately no password or
+     * credential field: this is the record an owner signs, not a credentials dump.
+     */
+    function printUser(id) {
+      const u = users.find(x => x.id === id);
+      if (!u) return;
+      EDY.print.preview({
+        title: u.fullName || u.username,
+        subtitle: 'User record',
+        html: EDY.print.record('User record', '@' + u.username, [
+          ['Username', u.username],
+          ['Full name', u.fullName || '\u2014'],
+          ['Role', u.role || '\u2014'],
+          ['Branch', u.branch || '\u2014'],
+          ['Email', u.email || '\u2014'],
+          ['Phone', u.phone || '\u2014'],
+          ['Status', u.active !== false ? 'Active' : 'Inactive']
+        ])
+      });
     }
 
     function fillForm(u) {

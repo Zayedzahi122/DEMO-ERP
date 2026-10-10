@@ -1,4 +1,4 @@
-﻿package ERP.Software.demo.purchase.model;
+package ERP.Software.demo.purchase.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;

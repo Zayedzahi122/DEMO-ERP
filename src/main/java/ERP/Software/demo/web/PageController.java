@@ -9,7 +9,8 @@ public class PageController {
 
     @GetMapping({"/pos", "/sales", "/quotations", "/purchases", "/products",
             "/inventory", "/customers", "/suppliers", "/expenses",
-            "/reports", "/payments", "/users", "/settings", "/invoice", "/login"})
+            "/reports", "/payments", "/users", "/settings", "/invoice", "/login",
+            "/super-admin"})
     public String forwardPage(HttpServletRequest req) {
         return "forward:" + req.getRequestURI() + ".html";
     }

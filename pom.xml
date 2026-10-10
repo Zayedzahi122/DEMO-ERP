@@ -28,6 +28,11 @@
 	</scm>
 	<properties>
 		<java.version>25</java.version>
+		<!-- Without this Maven compiles with the platform default charset, which on
+		     Windows mangles the Arabic literals (receipt footer) into question marks
+		     before they ever reach the utf8mb4 database. -->
+		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 	</properties>
 	<dependencies>
 		<dependency>

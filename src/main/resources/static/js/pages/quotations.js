@@ -5,8 +5,8 @@ window.PAGE = {
     const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const money = (v) => EDY.fmt.money(v);
 const amt = (v) => EDY.fmt.amount(v);          // same scale, no currency label
-const vatRate = () => Number(EDY.settings['tax.vatRate'] ?? 0.05);
-const vatPct = () => (vatRate() * 100).toLocaleString('en-US', { maximumFractionDigits: 4 });
+const vatRate = () => EDY.vat.rate();
+const vatPct = () => EDY.vat.pct();
 
     let quotations = [];
     let customers = [];
@@ -75,7 +75,7 @@ const vatPct = () => (vatRate() * 100).toLocaleString('en-US', { maximumFraction
             '<button class="btn btn-primary btn-sm dropdown-toggle" data-bs-toggle="dropdown">Actions</button>' +
             '<ul class="dropdown-menu dropdown-menu-end">' +
             '<li><a class="dropdown-item" href="#" data-view="' + r.id + '"><i class="bi bi-eye me-2"></i>View</a></li>' +
-            '<li><a class="dropdown-item" href="/invoice?type=quotation&id=' + r.id + '" target="_blank"><i class="bi bi-printer me-2"></i>Print</a></li>' +
+            '<li><a class="dropdown-item" href="#" data-print="' + r.id + '"><i class="bi bi-printer me-2"></i>Print</a></li>' +
             (r.status !== 'CONVERTED' ? '<li><a class="dropdown-item" href="#" data-convert="' + r.id + '"><i class="bi bi-arrow-right-circle me-2"></i>Convert to Sale</a></li>' : '') +
             '<li><hr class="dropdown-divider"></li>' +
             '<li><a class="dropdown-item text-danger" href="#" data-del="' + r.id + '"><i class="bi bi-trash me-2"></i>Delete</a></li>' +
@@ -89,10 +89,31 @@ const vatPct = () => (vatRate() * 100).toLocaleString('en-US', { maximumFraction
       const v = e.target.closest('[data-view]');
       const cv = e.target.closest('[data-convert]');
       const dl = e.target.closest('[data-del]');
+      const pr = e.target.closest('[data-print]');
       if (v) { e.preventDefault(); openView(Number(v.dataset.view)); }
+      else if (pr) { e.preventDefault(); printQuo(Number(pr.dataset.print)); }
       else if (cv) { e.preventDefault(); convert(Number(cv.dataset.convert)); }
       else if (dl) { e.preventDefault(); remove(Number(dl.dataset.del)); }
     });
+
+    /**
+     * Quotations used to open a second page that printed on arrival, which gave the
+     * reader no chance to see what would come out. The preview is the same document,
+     * now shown first.
+     */
+    function printQuo(id) {
+      const q = quotations.find(x => x.id === id);
+      if (!q) return;
+      EDY.print.preview({
+        title: q.quotationNumber,
+        subtitle: 'Quotation \u00b7 valid until ' + (q.validUntil || '\u2014'),
+        formats: [
+          { id: 'a4', label: 'A4 quotation' },
+          { id: 'receipt', label: 'Receipt (80mm)' }
+        ],
+        build: (fmt) => EDY.print.invoice(q, { type: 'quotation', format: fmt })
+      });
+    }
 
     /* ---------- Add / edit quotation ---------- */
     function fillCustomerSel() {
@@ -107,10 +128,10 @@ const vatPct = () => (vatRate() * 100).toLocaleString('en-US', { maximumFraction
     function calcQuoteTotals() {
       const st = qLines.reduce((s, l) => s + l.price * l.qty, 0);
       const disc = Number(document.getElementById('qDiscount').value) || 0;
-      const vat = (st - disc) * vatRate();
+      const t = EDY.vat.split(st - disc);
       document.getElementById('qstSubtotal').textContent = amt(st);
-      document.getElementById('qstVat').textContent = amt(vat);
-      document.getElementById('qstTotal').textContent = amt(st - disc + vat);
+      document.getElementById('qstVat').textContent = amt(t.tax);
+      document.getElementById('qstTotal').textContent = amt(t.total);
     }
 
     function renderLines() {
@@ -198,7 +219,7 @@ const vatPct = () => (vatRate() * 100).toLocaleString('en-US', { maximumFraction
         '<div class="row fs-14">' +
         '<div class="col-6 offset-4 text-end muted">Subtotal</div><div class="col-2 text-end">' + amt(q.subtotal) + '</div>' +
         (Number(q.discount || 0) > 0 ? '<div class="col-6 offset-4 text-end muted">Discount</div><div class="col-2 text-end text-red">\u2212' + amt(q.discount) + '</div>' : '') +
-        '<div class="col-6 offset-4 text-end muted">VAT (' + esc(vatPct()) + '%)</div><div class="col-2 text-end">' + amt(q.taxAmount) + '</div>' +
+        (Number(q.taxAmount) > 0 ? '<div class="col-6 offset-4 text-end muted">VAT</div><div class="col-2 text-end">' + amt(q.taxAmount) + '</div>' : '') +
         '<div class="col-6 offset-4 text-end fw-bold">Total</div><div class="col-2 text-end fw-bold fs-5">' + amt(q.totalAmount) + '</div>' +
         '</div>';
       const btnConvert = document.getElementById('qvConvert');

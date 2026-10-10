@@ -48,6 +48,8 @@ window.PAGE = {
       '</div></div>';
 
     let table = null;
+    /** The sale currently open in the View dialog, so its footer can print it. */
+    let shownId = 0;
 
     function statusBadge(s) {
       const map = {
@@ -137,6 +139,8 @@ window.PAGE = {
             else if (r.customerName) name = esc(r.customerName);
             else if (r.walkinName) name = esc(r.walkinName) + ' <span class="muted fs-12">(walk-in)</span>';
             return name; } },
+          { key: 'location', label: 'Location', render: (r) => r.location
+            ? '<span class="muted"><i class="bi bi-geo-alt me-1"></i>' + esc(r.location) + '</span>' : '\u2014' },
           { key: 'paymentMethod', label: 'Payment', render: (r) => '<span title="' + esc(payMethodTitle(r)) + '">' + esc(payMethodLabel(r)) + '</span>' },
           { key: 'items', label: 'Items', render: (r) => Array.isArray(r.items) ? r.items.reduce((s, it) => s + it.quantity, 0) : 0 },
           { key: 'discount', label: 'Discount', money: true },
@@ -155,19 +159,52 @@ window.PAGE = {
               return '<span class="text-green">' + EDY.fmt.money(0) + '</span>';
             } },
           { key: 'status', label: 'Status', render: (r) => statusBadge(r.status) },
-          { key: 'id', label: 'Actions', render: (r) =>
-            '<div class="dropdown">' +
-            '<button class="btn btn-primary btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">Actions</button>' +
-            '<ul class="dropdown-menu dropdown-menu-end">' +
-            '<li><a class="dropdown-item" href="#" data-view="' + r.id + '"><i class="bi bi-eye me-2"></i>View</a></li>' +
-            (r.status !== 'CANCELLED' ? '<li><a class="dropdown-item" href="#" data-edit="' + r.id + '"><i class="bi bi-pencil me-2"></i>Edit</a></li>' : '') +
-            (r.status !== 'CANCELLED' ? '<li><hr class="dropdown-divider"></li>' +
-              '<li><a class="dropdown-item text-danger" href="#" data-cancel="' + r.id + '"><i class="bi bi-x-circle me-2"></i>Cancel</a></li>' : '') +
-            '</ul></div>' }
+          { key: 'id', label: 'Actions', render: (r) => {
+              // The Edit item stays visible but disabled once the sale falls outside
+              // the edit window set in Settings, so the reason is discoverable
+              // instead of the button silently vanishing.
+              const block = r.status === 'CANCELLED' ? null : EDY.editWindow.blocked(r.invoiceDate);
+              const editItem = r.status === 'CANCELLED' ? ''
+                : block
+                  ? '<li><a class="dropdown-item disabled" aria-disabled="true" title="' + esc(block) + '">' +
+                    '<i class="bi bi-pencil me-2"></i>Edit</a></li>'
+                  : '<li><a class="dropdown-item" href="#" data-edit="' + r.id + '"><i class="bi bi-pencil me-2"></i>Edit</a></li>';
+              return '<div class="dropdown">' +
+              '<button class="btn btn-primary btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">Actions</button>' +
+              '<ul class="dropdown-menu dropdown-menu-end">' +
+              '<li><a class="dropdown-item" href="#" data-view="' + r.id + '"><i class="bi bi-eye me-2"></i>View</a></li>' +
+              '<li><a class="dropdown-item" href="#" data-print="' + r.id + '"><i class="bi bi-printer me-2"></i>Print</a></li>' +
+              editItem +
+              (r.status !== 'CANCELLED' ? '<li><hr class="dropdown-divider"></li>' +
+                '<li><a class="dropdown-item text-danger" href="#" data-cancel="' + r.id + '"><i class="bi bi-x-circle me-2"></i>Cancel</a></li>' : '') +
+              '</ul></div>';
+            } }
         ],
         emptyText: 'No sales yet. Create one from POS or the New Sale button.'
       });
     }
+
+    /**
+     * Opens the preview for a sale. Both the row's Print item and the View dialog
+     * come through here, so there is one route to paper and no second, plainer
+     * document hiding behind a different button.
+     */
+    function printSale(id) {
+      const inv = invoices.find(i => i.id === id);
+      if (!inv) return;
+      EDY.print.preview({
+        title: inv.invoiceNumber,
+        subtitle: 'Sales invoice \u00b7 ' + EDY.fmt.datetime(inv.invoiceDate),
+        formats: [
+          { id: 'a4', label: 'A4 invoice' },
+          { id: 'receipt', label: 'Receipt (80mm)' }
+        ],
+        build: (fmt) => EDY.print.invoice(inv, { type: 'sale', format: fmt })
+      });
+    }
+    // Exposed so the View dialog's Print button — built once in sales.html — can
+    // reach the sale currently on screen without re-plumbing the modal.
+    window.edyPrintSale = printSale;
 
     // One delegated handler on the table: the rows are re-rendered on every
     // filter/page change, so per-button listeners would not survive.
@@ -175,7 +212,9 @@ window.PAGE = {
       const v = e.target.closest('[data-view]');
       const ed = e.target.closest('[data-edit]');
       const cx = e.target.closest('[data-cancel]');
+      const pr = e.target.closest('[data-print]');
       if (v) { e.preventDefault(); view(Number(v.dataset.view)); }
+      else if (pr) { e.preventDefault(); printSale(Number(pr.dataset.print)); }
       else if (ed) { e.preventDefault(); editSale(Number(ed.dataset.edit)); }
       else if (cx) { e.preventDefault(); cancel(Number(cx.dataset.cancel)); }
     });
@@ -183,6 +222,7 @@ window.PAGE = {
     function view(id) {
       const inv = invoices.find(i => i.id === id);
       if (!inv) return;
+      shownId = id;
       EDY.ui.openModal('invModal');
       const itm = Array.isArray(inv.items) ? inv.items : [];
       let rows = itm.map(it => {
@@ -191,12 +231,13 @@ window.PAGE = {
       }).join('') || '<tr><td colspan="4" class="text-center muted">No items</td></tr>';
       document.getElementById('invBody').innerHTML =
         '<div class="d-flex justify-content-between mb-3"><div><div class="fw-bold fs-5">' + esc(inv.invoiceNumber) + '</div><div class="muted">' + EDY.fmt.datetime(inv.invoiceDate) + '</div></div>' + statusBadge(inv.status) + '</div>' +
-        '<div class="row mb-3"><div class="col-6"><div class="muted fs-12">Customer</div><div class="fw-bold">' + esc((inv.customer && inv.customer.name) || inv.customerName || inv.walkinName || '\u2014') + '</div></div>' +
-        '<div class="col-6"><div class="muted fs-12">Payment</div><div class="fw-bold" title="' + esc(payMethodTitle(inv)) + '">' + esc(payMethodLabel(inv)) + '</div></div></div>' +
+        '<div class="row mb-3"><div class="col-4"><div class="muted fs-12">Customer</div><div class="fw-bold">' + esc((inv.customer && inv.customer.name) || inv.customerName || inv.walkinName || '\u2014') + '</div></div>' +
+        '<div class="col-4"><div class="muted fs-12">Payment</div><div class="fw-bold" title="' + esc(payMethodTitle(inv)) + '">' + esc(payMethodLabel(inv)) + '</div></div>' +
+        '<div class="col-4"><div class="muted fs-12">Location</div><div class="fw-bold"><i class="bi bi-geo-alt me-1"></i>' + esc(inv.location || '\u2014') + '</div></div></div>' +
         '<table class="table"><thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead><tbody>' + rows + '</tbody></table>' +
         '<div class="d-flex justify-content-between fw-bold"><span>Subtotal</span><span>' + EDY.fmt.money(inv.subtotal) + '</span></div>' +
         '<div class="d-flex justify-content-between muted"><span>Discount</span><span>\u2212' + EDY.fmt.money(inv.discount || 0) + '</span></div>' +
-        '<div class="d-flex justify-content-between muted"><span>VAT (' + EDY.vat.pct() + '%)</span><span>' + EDY.fmt.money(inv.taxAmount || 0) + '</span></div>' +
+        (Number(inv.taxAmount || 0) > 0 ? '<div class="d-flex justify-content-between muted"><span>VAT</span><span>' + EDY.fmt.money(inv.taxAmount) + '</span></div>' : '') +
         '<div class="d-flex justify-content-between fw-bold fs-5 border-top mt-2 pt-2"><span>Total</span><span>' + EDY.fmt.money(inv.totalAmount) + '</span></div>' +
         ((inv.payments && inv.payments.length)
           ? (inv.payments || []).map(p => '<div class="d-flex justify-content-between fs-13"><span class="muted">Paid (' + esc(p.method || 'CASH') + ')</span><span>' + EDY.fmt.money(p.amount) + '</span></div>').join('') : '') +
@@ -299,6 +340,7 @@ window.PAGE = {
             customerId: cust.id,
             invoiceDate: g.date || undefined,
             paymentMethod: g.pay || 'CASH',
+            location: (window.EDY.layout ? EDY.layout.branch() : (localStorage.getItem('edy.branch') || 'Main Branch')),
             items: skuItems.map(it => ({ productId: it.prod.id, quantity: it.qty, unitPrice: it.price || undefined }))
           };
           await EDY.api.post('/api/sales-invoices', payload);
@@ -314,8 +356,20 @@ window.PAGE = {
     const im = document.createElement('div');
     im.className = 'modal fade';
     im.id = 'invModal';
-    im.innerHTML = '<div class="modal-dialog modal-dialog-centered modal-lg"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">Invoice</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body" id="invBody"></div></div></div>';
+    im.innerHTML = '<div class="modal-dialog modal-dialog-centered modal-lg"><div class="modal-content">' +
+      '<div class="modal-header"><h5 class="modal-title">Invoice</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>' +
+      '<div class="modal-body" id="invBody"></div>' +
+      '<div class="modal-footer">' +
+        '<button class="btn btn-ghost" type="button" data-bs-dismiss="modal">Close</button>' +
+        '<button class="btn btn-primary" type="button" id="invPrintBtn">' +
+          '<i class="bi bi-printer me-1"></i>Print</button>' +
+      '</div></div></div>';
     document.body.appendChild(im);
+    // Printing from the dialog is the same document as the row's Print item, so the
+    // two never disagree about what this sale looks like on paper.
+    im.querySelector('#invPrintBtn').addEventListener('click', () => {
+      if (shownId) window.edyPrintSale(shownId);
+    });
 
     /* ---------- edit modal ---------- */
     const editModal = document.createElement('div');
@@ -334,8 +388,9 @@ window.PAGE = {
           '<button class="btn btn-outline-primary btn-sm flex-fill pay-btn" data-pay="OTHER">Other</button>' +
           '<button class="btn btn-outline-primary btn-sm flex-fill pay-btn" data-pay="CREDIT">Credit</button>' +
         '</div></div>' +
-        '<div class="col-md-3"><label class="form-label">Date</label><input class="form-control form-control-sm" type="date" id="edDate"></div>' +
-        '<div class="col-md-3"><label class="form-label">Status</label><select class="form-select form-select-sm" id="edStatus">' +
+        '<div class="col-md-4"><label class="form-label">Location</label><select class="form-select form-select-sm" id="edLoc"></select></div>' +
+        '<div class="col-md-4"><label class="form-label">Date</label><input class="form-control form-control-sm" type="date" id="edDate"></div>' +
+        '<div class="col-md-4"><label class="form-label">Status</label><select class="form-select form-select-sm" id="edStatus">' +
           '<option value="CONFIRMED">Confirmed</option>' +
           '<option value="PENDING">Pending</option>' +
           '<option value="PAID">Paid</option>' +
@@ -353,7 +408,7 @@ window.PAGE = {
       '</tr></thead><tbody id="edItems"></tbody></table></div>' +
       '<div class="d-flex justify-content-between mt-2"><div class="muted fs-13" id="edItemCount">0 items</div>' +
         '<div class="text-end"><div class="muted fs-13">Subtotal: <span id="edSubtotal">\u2014</span></div>' +
-        '<div class="muted fs-13">VAT (' + EDY.vat.pct() + '%): <span id="edTax">\u2014</span></div>' +
+        (EDY.vat.on() ? '<div class="muted fs-13">' + EDY.vat.label() + ': <span id="edTax">\u2014</span></div>' : '') +
         '<div class="fw-bold fs-5">Total: <span id="edTotal" class="text-primary">\u2014</span></div></div>' +
       '</div>' +
       '<hr>' +
@@ -422,10 +477,11 @@ window.PAGE = {
       const sub = editItems.reduce((s, it) => s + it.price * it.qty, 0);
       const disc = Math.min(Number(document.getElementById('edDiscount').value || 0), sub);
       const taxable = sub - disc;
-      const tax = taxable * EDY.vat.rate();
+      const tax = EDY.vat.split(taxable).tax;
       document.getElementById('edItemCount').textContent = editItems.length + ' item' + (editItems.length === 1 ? '' : 's');
       document.getElementById('edSubtotal').textContent = EDY.fmt.money(sub);
-      document.getElementById('edTax').textContent = EDY.fmt.money(tax);
+      const edTax = document.getElementById('edTax');
+      if (edTax) edTax.textContent = EDY.fmt.money(tax);
       document.getElementById('edTotal').textContent = EDY.fmt.money(editEffectiveTotal());
       renderEditPayments();
     }
@@ -572,6 +628,10 @@ window.PAGE = {
     function editSale(id) {
       const inv = invoices.find(i => i.id === id);
       if (!inv || inv.status === 'CANCELLED') return;
+      // Re-checked here as well as in the menu: the page could have been left open
+      // across a settings change, and this is the point where data would be written.
+      const block = EDY.editWindow.blocked(inv.invoiceDate);
+      if (block) { EDY.ui.toast(block, 'warning'); return; }
       editInvId = id;
       editPayMethod = inv.paymentMethod || 'CASH';
       editItems = (inv.items || []).map(it => ({
@@ -587,6 +647,13 @@ window.PAGE = {
       sel.innerHTML = '<option value="">Walk-in Customer</option>' +
         customers.map(c => '<option value="' + c.id + '">' + esc(c.name) + (c.phone ? ' \u2014 ' + esc(c.phone) : '') + '</option>').join('');
       sel.value = inv.customer ? inv.customer.id : '';
+
+      const elLoc = document.getElementById('edLoc');
+      const locs = (EDY.settings && Array.isArray(EDY.settings.locations))
+        ? EDY.settings.locations.map(s => String(s || '').trim()).filter(Boolean) : [];
+      const list = (inv.location && locs.indexOf(inv.location) < 0 ? [inv.location].concat(locs) : locs);
+      elLoc.innerHTML = '<option value=""></option>' + list.map(l => '<option value="' + esc(l) + '">' + esc(l) + '</option>').join('');
+      elLoc.value = inv.location || '';
 
       document.getElementById('edDiscount').value = inv.discount || 0;
       document.getElementById('edDate').value = inv.invoiceDate || '';
@@ -626,6 +693,7 @@ window.PAGE = {
       const payload = {
         customerId: document.getElementById('edCust').value || undefined,
         invoiceDate: document.getElementById('edDate').value || undefined,
+        location: document.getElementById('edLoc').value || undefined,
         discount: Number(document.getElementById('edDiscount').value) || 0,
         paymentMethod: editPayMethod,
         payments,

@@ -11,6 +11,42 @@ window.PAGE = {
     let activeCat = '';
     let currentStockId = null;
 
+    /** True while a super admin is viewing every business at once. */
+    function isSpanning() {
+      const t = EDY.tenant && EDY.tenant.ctx;
+      return !!(t && t.superAdmin && !t.actingBusiness);
+    }
+
+    /**
+     * Writes are only allowed inside one business. When the session is still
+     * "viewing all businesses" and the user targets a product, switch into that
+     * product's business (then reload) instead of failing with a permission error.
+     */
+    async function ensureBusiness(id) {
+      if (!isSpanning()) return true;
+      const p = products.find(x => x.id === id);
+      if (!p || !p.businessId) return false;
+      try {
+        await EDY.api.post('/api/businesses/' + p.businessId + '/enter');
+        let bizName = 'that business';
+        try {
+          const list = await EDY.api.get('/api/businesses');
+          const b = list.find(x => x.id === p.businessId);
+          if (b && b.name) bizName = b.name;
+        } catch (e) { /* name lookup is optional */ }
+        EDY.ui.toast('Switched into ' + bizName + ' \u2014 reloading…', 'success');
+        setTimeout(() => location.reload(), 700);
+      } catch (e) { EDY.ui.toast(e.message, 'error'); }
+      return false;
+    }
+
+    /** Warn when a write without a target business is attempted in spanning mode. */
+    function warnSpanning() {
+      if (!isSpanning()) return true;
+      EDY.ui.toast("You're viewing every business \u2014 open one first.", 'warning');
+      return false;
+    }
+
     box.innerHTML =
       '<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-4">' +
       '<div><h1 class="page-title mb-1">Products</h1><div class="page-sub">Manage your catalog, pricing and stock levels</div></div>' +
@@ -19,6 +55,7 @@ window.PAGE = {
       '<button class="btn btn-ghost" id="btnImport"><i class="bi bi-upload me-1"></i>Import</button>' +
       '<button class="btn btn-primary" id="btnAdd"><i class="bi bi-plus-lg me-1"></i>Add Product</button>' +
       '</div></div>' +
+      '<input type="file" id="imgInput" accept="image/*" hidden>' +
 
       '<div class="d-flex gap-3 align-items-start flex-wrap">' +
 
@@ -54,6 +91,13 @@ window.PAGE = {
       sel.innerHTML = '<option value="">None</option>' + categories.map(c => '<option value="' + c.id + '"' + (activeCat === c.id ? ' selected' : '') + '>' + esc(c.name) + '</option>').join('');
     }
 
+    /** Selling price implied by the default profit percent from Settings. */
+    function suggestPrice(cost) {
+      const pct = Number(EDY.settings['biz.defaultProfit']);
+      if (!cost || !Number.isFinite(pct) || pct <= 0) return '';
+      return (Number(cost) * (1 + pct / 100)).toFixed(EDY.fmt.scale());
+    }
+
     function renderForm(p, cats) {
       document.getElementById('pId').value = p ? p.id : '';
       document.getElementById('pName').value = p ? p.name || '' : '';
@@ -65,23 +109,40 @@ window.PAGE = {
       document.getElementById('pDesc').value = p ? p.description || '' : '';
       document.getElementById('pCat').innerHTML = '<option value="">None</option>' + cats.map(c => '<option value="' + c.id + '"' + (p && p.category && p.category.id === c.id ? ' selected' : '') + '>' + esc(c.name) + '</option>').join('');
       document.getElementById('pCost').value = p ? p.costPrice : '';
-      document.getElementById('pPrice').value = p ? p.unitPrice : '';
+      document.getElementById('pPrice').value = p ? p.unitPrice : suggestPrice('');
       document.getElementById('pStock').value = p ? p.quantityInStock : 0;
       document.getElementById('pReorder').value = p ? p.reorderLevel : 10;
       document.getElementById('pmTitle').textContent = p ? 'Edit Product' : 'Add Product';
     }
 
     async function openAdd() {
+      if (!warnSpanning()) return;
       renderForm(null, categories);
       const d = await EDY.api.get('/api/products/next-sku').catch(() => null);
       if (d && d.sku) document.getElementById('pSku').value = d.sku;
       EDY.ui.openModal('productModal');
     }
 
+    // On a new product, keep the selling price in step with the purchase price
+    // using the default profit percent. Editing an existing product is left alone.
+    document.getElementById('pCost').addEventListener('input', function () {
+      if (document.getElementById('pId').value) return;
+      const suggested = suggestPrice(this.value);
+      if (suggested !== '') document.getElementById('pPrice').value = suggested;
+    });
+
     function stockBadge(p) {
       if (p.quantityInStock <= 0) return '<span class="badge bg-soft-red">Out of stock</span>';
       if (p.quantityInStock <= (p.reorderLevel || 0)) return '<span class="badge bg-soft-amber">Low</span>';
       return '<span class="badge bg-soft-green">In stock</span>';
+    }
+
+    /** The product photo, or the plain box icon when none has been uploaded. */
+    function thumbHtml(r) {
+      if (r.image && String(r.image).indexOf('data:image/') === 0) {
+        return '<img src="' + esc(r.image) + '" alt="">';
+      }
+      return '<i class="bi bi-box-seam"></i>';
     }
 
     function renderCatList() {
@@ -104,6 +165,7 @@ window.PAGE = {
     }
 
     async function addCategory() {
+      if (!warnSpanning()) return;
       const name = document.getElementById('catName').value.trim();
       if (!name) { EDY.ui.toast('Enter a category name first', 'warning'); return; }
       try {
@@ -116,6 +178,7 @@ window.PAGE = {
     }
 
     async function deleteCategory(id) {
+      if (!warnSpanning()) return;
       const cat = categories.find(c => c.id === id);
       if (!cat) return;
       const used = products.filter(p => p.category && p.category.id === id).length;
@@ -141,25 +204,29 @@ window.PAGE = {
         pageSize: ps,
         columns: [
           { key: 'name', label: 'Product', render: (r) =>
-            '<div class="d-flex align-items-center gap-2"><div class="product-thumb"><i class="bi bi-box-seam"></i></div>' +
+            '<div class="d-flex align-items-center gap-2"><div class="product-thumb">' + thumbHtml(r) + '</div>' +
             '<div><div class="fw-bold">' + esc(r.name) + '</div><div class="muted fs-12">' + esc(r.sku || '') + ' &middot; ' + (r.barcode || 'no barcode') + '</div></div></div>' },
           { key: 'category', label: 'Category', render: (r) => r.category ? '<span class="badge bg-soft-blue">' + esc(r.category.name) + '</span>' : '\u2014' },
           { key: 'costPrice', label: 'Purchase', money: true },
           { key: 'unitPrice', label: 'Selling', money: true },
           { key: 'vat', label: 'VAT', render: () => '<span class="badge bg-soft-purple">' + EDY.vat.pct() + '%</span>' },
-          { key: 'quantityInStock', label: 'Stock', render: (r) => '<span class="fw-bold">' + EDY.fmt.num(r.quantityInStock) + '</span>' },
-          { key: 'reorderLevel', label: 'Min', render: (r) => EDY.fmt.num(r.reorderLevel || 0) },
+          { key: 'quantityInStock', label: 'Stock', render: (r) => '<span class="fw-bold">' + EDY.fmt.qty(r.quantityInStock) + '</span>' },
+          { key: 'reorderLevel', label: 'Min', render: (r) => EDY.fmt.qty(r.reorderLevel || 0) },
           { key: 'status', label: 'Status', render: (r) => stockBadge(r) },
           { key: 'id', label: 'Actions', render: (r) =>
+            '<div class="d-flex align-items-center gap-1">' +
+            '<button class="btn btn-ghost btn-icon" data-img="' + r.id + '" title="Upload or replace product image"><i class="bi bi-image"></i></button>' +
             '<div class="dropdown">' +
             '<button class="btn btn-primary btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">Actions</button>' +
             '<ul class="dropdown-menu dropdown-menu-end">' +
             '<li><a class="dropdown-item" href="#" data-view="' + r.id + '"><i class="bi bi-eye me-2"></i>View</a></li>' +
+            '<li><a class="dropdown-item" href="#" data-print="' + r.id + '"><i class="bi bi-printer me-2"></i>Print</a></li>' +
             '<li><a class="dropdown-item" href="#" data-edit="' + r.id + '"><i class="bi bi-pencil me-2"></i>Edit</a></li>' +
             '<li><a class="dropdown-item" href="#" data-stock="' + r.id + '"><i class="bi bi-box-arrow-in-down me-2"></i>Add Opening Stock</a></li>' +
+            (r.image ? '<li><a class="dropdown-item" href="#" data-imgrm="' + r.id + '"><i class="bi bi-image-slash me-2"></i>Remove Image</a></li>' : '') +
             '<li><hr class="dropdown-divider"></li>' +
             '<li><a class="dropdown-item text-danger" href="#" data-del="' + r.id + '"><i class="bi bi-trash me-2"></i>Delete</a></li>' +
-            '</ul></div>' }
+            '</ul></div></div>' }
         ],
         emptyText: 'No products yet. Click "Add Product" to create your first one.'
       });
@@ -170,17 +237,132 @@ window.PAGE = {
       const ed = e.target.closest('[data-edit]');
       const st = e.target.closest('[data-stock]');
       const dl = e.target.closest('[data-del]');
-      if (v) { e.preventDefault(); openView(Number(v.dataset.view)); }
+      const pr = e.target.closest('[data-print]');
+      const up = e.target.closest('[data-img]');
+      const rm = e.target.closest('[data-imgrm]');
+      if (up) { e.preventDefault(); openUpload(Number(up.dataset.img)); }
+      else if (rm) { e.preventDefault(); removeImage(Number(rm.dataset.imgrm)); }
+      else if (v) { e.preventDefault(); openView(Number(v.dataset.view)); }
+      else if (pr) { e.preventDefault(); printProduct(Number(pr.dataset.print)); }
       else if (ed) { e.preventDefault(); openEdit(Number(ed.dataset.edit)); }
       else if (st) { e.preventDefault(); openStock(Number(st.dataset.stock)); }
       else if (dl) { e.preventDefault(); remove(Number(dl.dataset.del)); }
     });
 
+    // ---- product image upload ----
+    let imgProductId = null;
+
+    async function openUpload(id) {
+      if (!(await ensureBusiness(id))) return;
+      imgProductId = id;
+      document.getElementById('imgInput').click();
+    }
+
+    /** Reads an image file, shrinks it for the database, then saves it. */
+    async function saveImage(file) {
+      if (!file) return;
+      if (!/^image\//.test(file.type)) { EDY.ui.toast('Please choose an image file', 'warning'); return; }
+      try {
+        const dataUrl = await resizeImage(file, 400);
+        const p = products.find(x => x.id === imgProductId);
+        if (!p) return;
+        const payload = {
+          sku: p.sku, name: p.name, description: p.description || null,
+          barcode: p.barcode || null, category: p.category ? { id: p.category.id } : null,
+          costPrice: Number(p.costPrice), unitPrice: Number(p.unitPrice),
+          quantityInStock: Number(p.quantityInStock), reorderLevel: Number(p.reorderLevel || 0),
+          image: dataUrl
+        };
+        await EDY.api.put('/api/products/' + imgProductId, payload);
+        EDY.ui.toast('Product image updated');
+        products = await EDY.api.get('/api/products');
+        renderCatList(); applyFilters();
+      } catch (e) { EDY.ui.toast(e.message, 'error'); }
+    }
+
+    function resizeImage(file, max) {
+      return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+          let w = img.naturalWidth, h = img.naturalHeight;
+          const scale = Math.max(w, h) > max ? max / Math.max(w, h) : 1;
+          w = Math.max(1, Math.round(w * scale)); h = Math.max(1, Math.round(h * scale));
+          const cv = document.createElement('canvas');
+          cv.width = w; cv.height = h;
+          cv.getContext('2d').drawImage(img, 0, 0, w, h);
+          URL.revokeObjectURL(url);
+          try { resolve(cv.toDataURL('image/jpeg', 0.85)); }
+          catch (err) { reject(err); }
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not read that image')); };
+        img.src = url;
+      });
+    }
+
+    async function removeImage(id) {
+      if (!(await ensureBusiness(id))) return;
+      const p = products.find(x => x.id === id);
+      if (!p) return;
+      const ok = await EDY.ui.confirm('Remove image?', 'Remove the photo from "' + p.name + '"?');
+      if (!ok) return;
+      try {
+        const payload = {
+          sku: p.sku, name: p.name, description: p.description || null,
+          barcode: p.barcode || null, category: p.category ? { id: p.category.id } : null,
+          costPrice: Number(p.costPrice), unitPrice: Number(p.unitPrice),
+          quantityInStock: Number(p.quantityInStock), reorderLevel: Number(p.reorderLevel || 0),
+          image: ''
+        };
+        await EDY.api.put('/api/products/' + id, payload);
+        EDY.ui.toast('Product image removed');
+        products = await EDY.api.get('/api/products');
+        renderCatList(); applyFilters();
+      } catch (e) { EDY.ui.toast(e.message, 'error'); }
+    }
+
+    document.getElementById('imgInput').addEventListener('change', (e) => {
+      saveImage(e.target.files[0]);
+      e.target.value = '';
+    });
+
+    /**
+     * A product has no document of its own, so Print produces a stock/price sheet
+     * — the same fields the View dialog shows, laid out to be pinned to a shelf or
+     * handed to a buyer.
+     */
+    function printProduct(id) {
+      const p = products.find(x => x.id === id);
+      if (!p) return;
+      const qty = Number(p.quantityInStock || 0);
+      EDY.print.preview({
+        title: p.name,
+        subtitle: 'Product \u00b7 ' + (p.sku || 'no SKU'),
+        html: EDY.print.record('Product', p.sku || '', [
+          ['SKU', p.sku || '\u2014'],
+          ['Barcode', p.barcode || '\u2014'],
+          ['Name', p.name],
+          ['Category', p.category ? p.category.name : '\u2014'],
+          ['Description', p.description || '\u2014'],
+          ['Purchase price', money(p.costPrice)],
+          ['Selling price', money(p.unitPrice)],
+          ['VAT rate', EDY.vat.pct() + '%'],
+          ['Stock quantity', EDY.fmt.qty(qty)],
+          ['Reorder level', EDY.fmt.qty(p.reorderLevel || 0)],
+          ['Stock value at cost', money(qty * Number(p.costPrice || 0))],
+          ['Status', qty <= 0 ? 'Out of stock' : (qty <= Number(p.reorderLevel || 0) ? 'Low stock' : 'In stock')]
+        ])
+      });
+    }
+
     function openView(id) {
       const p = products.find(x => x.id === id);
       if (!p) return;
       const row = (label, val) => '<div class="d-flex justify-content-between border-bottom py-2 gap-3"><span class="muted">' + label + '</span><span class="fw-semibold text-end">' + val + '</span></div>';
+      const imgHtml = (p.image && String(p.image).indexOf('data:image/') === 0)
+        ? '<div class="text-center mb-3"><img src="' + esc(p.image) + '" alt="' + esc(p.name) + '" style="max-height:150px;max-width:100%;border-radius:10px;object-fit:contain;border:1px solid var(--border)"></div>' : '';
       document.getElementById('pvBody').innerHTML =
+        imgHtml +
         row('SKU', esc(p.sku || '\u2014')) +
         row('Barcode', esc(p.barcode || '\u2014')) +
         row('Name', esc(p.name)) +
@@ -189,18 +371,19 @@ window.PAGE = {
         row('Purchase Price', money(p.costPrice)) +
         row('Selling Price', money(p.unitPrice)) +
         row('VAT', EDY.vat.pct() + '%') +
-        row('Stock Qty', EDY.fmt.num(p.quantityInStock)) +
-        row('Reorder Level', EDY.fmt.num(p.reorderLevel || 0)) +
+        row('Stock Qty', EDY.fmt.qty(p.quantityInStock)) +
+        row('Reorder Level', EDY.fmt.qty(p.reorderLevel || 0)) +
         row('Status', stockBadge(p));
       EDY.ui.openModal('productViewModal');
     }
 
-    function openStock(id) {
+    async function openStock(id) {
+      if (!(await ensureBusiness(id))) return;
       currentStockId = id;
       const p = products.find(x => x.id === id);
       document.getElementById('osInfo').innerHTML =
         '<div class="fw-bold">' + esc(p.name) + '</div><div class="muted fs-13">' + esc(p.sku || '') +
-        ' &middot; Current stock: <span class="fw-semibold">' + EDY.fmt.num(p.quantityInStock) + '</span></div>';
+        ' &middot; Current stock: <span class="fw-semibold">' + EDY.fmt.qty(p.quantityInStock) + '</span></div>';
       document.getElementById('osQty').value = '';
       EDY.ui.openModal('stockModal');
       document.getElementById('osQty').focus();
@@ -228,13 +411,15 @@ window.PAGE = {
       table.search(document.getElementById('tblSearch').value);
     }
 
-    function openEdit(id) {
+    async function openEdit(id) {
+      if (!(await ensureBusiness(id))) return;
       const p = products.find(x => x.id === id);
       renderForm(p, categories);
       EDY.ui.openModal('productModal');
     }
 
     async function remove(id) {
+      if (!(await ensureBusiness(id))) return;
       const p = products.find(x => x.id === id);
       const ok = await EDY.ui.confirm('Delete product?', 'Delete "' + p.name + '" from your catalog? This cannot be undone.');
       if (!ok) return;
@@ -257,6 +442,8 @@ window.PAGE = {
     document.getElementById('productForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const id = document.getElementById('pId').value;
+      if (id) { if (!(await ensureBusiness(Number(id)))) return; }
+      else if (!warnSpanning()) return;
       const catVal = document.getElementById('pCat').value;
       const payload = {
         sku: document.getElementById('pSku').value.trim(),
@@ -290,6 +477,7 @@ window.PAGE = {
 
     document.getElementById('btnImport').addEventListener('click', () => document.getElementById('csvImport').click());
     document.getElementById('csvImport').addEventListener('change', async (e) => {
+      if (!warnSpanning()) { e.target.value = ''; return; }
       const file = e.target.files[0];
       if (!file) return;
       const text = await file.text();

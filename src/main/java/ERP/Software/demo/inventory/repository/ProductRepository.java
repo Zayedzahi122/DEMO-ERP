@@ -8,5 +8,11 @@ import java.util.Optional;
 
 public interface ProductRepository extends JpaRepository<Product, Long> {
     Optional<Product> findBySku(String sku);
+    Optional<Product> findByBusinessIdAndSku(Long businessId, String sku);
+    boolean existsByBusinessIdAndSku(Long businessId, String sku);
     List<Product> findByQuantityInStockLessThanEqual(Integer threshold);
+    List<Product> findByBusinessIdAndQuantityInStockLessThanEqual(Long businessId, Integer threshold);
+    List<Product> findAllByOrderByNameAsc();
+    List<Product> findAllByBusinessIdOrderByNameAsc(Long businessId);
+    long countByBusinessId(Long businessId);
 }

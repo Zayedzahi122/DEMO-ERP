@@ -4,6 +4,7 @@ import ERP.Software.demo.accounting.model.EntryType;
 
 import ERP.Software.demo.accounting.repository.LedgerEntryRepository;
 import ERP.Software.demo.accounting.service.LedgerService;
+import ERP.Software.demo.business.service.TenantContext;
 import ERP.Software.demo.common.money.Totals;
 import ERP.Software.demo.common.exception.ResourceNotFoundException;
 import ERP.Software.demo.inventory.model.Product;
@@ -24,7 +25,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -43,14 +43,36 @@ public class SalesInvoiceService {
     private final LedgerEntryRepository ledgerEntryRepository;
     private final StockMovementRepository stockMovementRepository;
     private final SettingsService settingsService;
+    private final TenantContext tenant;
 
     public List<SalesInvoice> findAll() {
-        return salesInvoiceRepository.findAllBy();
+        Long businessId = tenant.idOrNull();
+        return businessId == null
+                ? salesInvoiceRepository.findAllBy()
+                : salesInvoiceRepository.findAllByBusinessId(businessId);
+    }
+
+    /** Counts invoices for a given business, or across all of them for a super admin. */
+    public long count() {
+        Long businessId = tenant.idOrNull();
+        return businessId == null
+                ? salesInvoiceRepository.count()
+                : salesInvoiceRepository.countByBusinessId(businessId);
+    }
+
+    /** Revenue for the dashboard, over the same window every other report uses. */
+    public List<SalesInvoice> between(LocalDate start, LocalDate end) {
+        Long businessId = tenant.idOrNull();
+        return businessId == null
+                ? salesInvoiceRepository.findByInvoiceDateBetween(start, end)
+                : salesInvoiceRepository.findByBusinessIdAndInvoiceDateBetween(businessId, start, end);
     }
 
     public SalesInvoice findById(Long id) {
-        return salesInvoiceRepository.findById(id)
+        SalesInvoice invoice = salesInvoiceRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Sales invoice not found: " + id));
+        tenant.check(invoice.getBusinessId(), "invoice");
+        return invoice;
     }
 
     @Transactional
@@ -64,11 +86,13 @@ public class SalesInvoiceService {
                 .status(request.getStatus() != null && request.getStatus() != InvoiceStatus.CANCELLED
                         ? request.getStatus() : InvoiceStatus.CONFIRMED)
                 .paymentMethod(request.getPaymentMethod() != null ? request.getPaymentMethod() : "CASH")
+                .location(cleanLocation(request.getLocation()))
                 .subtotal(BigDecimal.ZERO)
                 .discount(request.getDiscount() != null ? request.getDiscount() : BigDecimal.ZERO)
                 .taxAmount(BigDecimal.ZERO)
                 .totalAmount(BigDecimal.ZERO)
                 .build();
+        tenant.stamp(invoice);
 
         BigDecimal subtotal = BigDecimal.ZERO;
 
@@ -86,13 +110,7 @@ public class SalesInvoiceService {
             invoice.addItem(item);
 
             productService.adjustStock(product.getId(), -itemReq.getQuantity());
-            stockMovementRepository.save(StockMovement.builder()
-                    .product(product)
-                    .type("OUT")
-                    .quantity(itemReq.getQuantity())
-                    .note("Sale")
-                    .reference("SALES")
-                    .build());
+            recordMovement(product, "OUT", itemReq.getQuantity(), "Sale");
 
             subtotal = subtotal.add(lineTotal);
         }
@@ -120,6 +138,13 @@ public class SalesInvoiceService {
         return saved;
     }
 
+    /** Trims a location and treats a blank value as unset. */
+    private String cleanLocation(String location) {
+        if (location == null) return null;
+        String t = location.trim();
+        return t.isEmpty() ? null : t;
+    }
+
     @Transactional
     public SalesInvoice updateInvoice(Long id, SalesInvoiceRequest request) {
         SalesInvoice invoice = findById(id);
@@ -130,13 +155,7 @@ public class SalesInvoiceService {
         // 1. Return all old stock
         for (SalesInvoiceItem old : invoice.getItems()) {
             productService.adjustStock(old.getProduct().getId(), old.getQuantity());
-            stockMovementRepository.save(StockMovement.builder()
-                    .product(old.getProduct())
-                    .type("IN")
-                    .quantity(old.getQuantity())
-                    .note("Sale edit — stock returned")
-                    .reference("SALES")
-                    .build());
+            recordMovement(old.getProduct(), "IN", old.getQuantity(), "Sale edit - stock returned");
         }
 
         // 2. Clear old items
@@ -147,6 +166,7 @@ public class SalesInvoiceService {
         invoice.setCustomer(customer);
         invoice.setInvoiceDate(request.getInvoiceDate() != null ? request.getInvoiceDate() : invoice.getInvoiceDate());
         invoice.setPaymentMethod(request.getPaymentMethod() != null ? request.getPaymentMethod() : invoice.getPaymentMethod());
+        if (request.getLocation() != null) invoice.setLocation(cleanLocation(request.getLocation()));
         invoice.setDiscount(request.getDiscount() != null ? request.getDiscount() : BigDecimal.ZERO);
         if (request.getStatus() != null && request.getStatus() != InvoiceStatus.CANCELLED) {
             invoice.setStatus(request.getStatus());
@@ -168,13 +188,7 @@ public class SalesInvoiceService {
             invoice.addItem(item);
 
             productService.adjustStock(product.getId(), -itemReq.getQuantity());
-            stockMovementRepository.save(StockMovement.builder()
-                    .product(product)
-                    .type("OUT")
-                    .quantity(itemReq.getQuantity())
-                    .note("Sale edit — stock deducted")
-                    .reference("SALES")
-                    .build());
+            recordMovement(product, "OUT", itemReq.getQuantity(), "Sale edit - stock deducted");
 
             subtotal = subtotal.add(lineTotal);
         }
@@ -204,14 +218,35 @@ public class SalesInvoiceService {
 
         // 6. Update ledger entry
         BigDecimal effectiveTotal = saved.getTotalAmount();
-        ledgerEntryRepository.findFirstByReferenceTypeAndReferenceId("SALES_INVOICE", saved.getId())
-                .ifPresent(entry -> {
-                    entry.setAmount(effectiveTotal);
-                    entry.setDescription("Sales invoice " + saved.getInvoiceNumber() + " (edited)");
-                    ledgerEntryRepository.save(entry);
-                });
+        var existingEntry = ledgerService.entryFor("SALES_INVOICE", saved.getId());
+        if (existingEntry != null) {
+            existingEntry.setAmount(effectiveTotal);
+            existingEntry.setDescription("Sales invoice " + saved.getInvoiceNumber() + " (edited)");
+            ledgerEntryRepository.save(existingEntry);
+        } else {
+            // The entry can be missing if a previous cancel deleted it; put it back
+            // rather than leaving an edited invoice unbooked.
+            ledgerService.record(EntryType.INCOME, effectiveTotal,
+                    "Sales invoice " + saved.getInvoiceNumber() + " (edited)", "SALES_INVOICE", saved.getId());
+        }
 
         return saved;
+    }
+
+    /**
+     * Logs a stock movement against a product and stamps it with the current
+     * business, so one company's inventory trail never shows up in another's.
+     */
+    private void recordMovement(Product product, String type, int quantity, String note) {
+        StockMovement movement = StockMovement.builder()
+                .product(product)
+                .type(type)
+                .quantity(quantity)
+                .note(note)
+                .reference("SALES")
+                .build();
+        tenant.stamp(movement);
+        stockMovementRepository.save(movement);
     }
 
     /**
@@ -221,7 +256,8 @@ public class SalesInvoiceService {
      * negative and produce negative VAT and a negative total.
      */
     private void applyTotals(SalesInvoice invoice, BigDecimal subtotal) {
-        Totals.Result t = Totals.of(subtotal, invoice.getDiscount(), settingsService.vatRate(), settingsService.moneyScale());
+        Totals.Result t = Totals.of(subtotal, invoice.getDiscount(), settingsService.taxRate(),
+                settingsService.moneyScale(), settingsService.taxInclusive());
         invoice.setSubtotal(t.subtotal());
         invoice.setDiscount(t.discount());
         invoice.setTaxAmount(t.taxAmount());
@@ -269,13 +305,28 @@ public class SalesInvoiceService {
         }
     }
 
+    /**
+     * The walk-in customer is per business: two companies must not share one
+     * customer row, or the name would collide in both books.
+     */
     private Customer resolveCustomer(Long customerId) {
+        Long businessId = tenant.id();
         if (customerId != null) {
-            return customerRepository.findById(customerId)
+            Customer customer = customerRepository.findById(customerId)
                     .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + customerId));
+            tenant.check(customer.getBusinessId(), "customer");
+            return customer;
         }
-        return customerRepository.findByName("Walk-in Customer")
-                .orElseGet(() -> customerRepository.save(Customer.builder().name("Walk-in Customer").build()));
+        return customerRepository.findByBusinessIdAndName(businessId, WALK_IN)
+                .orElseGet(this::createWalkIn);
+    }
+
+    private static final String WALK_IN = "Walk-in Customer";
+
+    private Customer createWalkIn() {
+        Customer customer = Customer.builder().name(WALK_IN).build();
+        tenant.stamp(customer);
+        return customerRepository.save(customer);
     }
 
     @Transactional
@@ -288,19 +339,13 @@ public class SalesInvoiceService {
         // against the "OUT" recorded when the sale was created.
         for (SalesInvoiceItem item : invoice.getItems()) {
             productService.adjustStock(item.getProduct().getId(), item.getQuantity());
-            stockMovementRepository.save(StockMovement.builder()
-                    .product(item.getProduct())
-                    .type("IN")
-                    .quantity(item.getQuantity())
-                    .note("Sale cancelled — stock returned")
-                    .reference("SALES")
-                    .build());
+            recordMovement(item.getProduct(), "IN", item.getQuantity(), "Sale cancelled - stock returned");
         }
 
         // A voided sale is not income. Drop the ledger entry so the dashboard and
         // reports stop counting revenue that no longer exists.
-        ledgerEntryRepository.findFirstByReferenceTypeAndReferenceId("SALES_INVOICE", invoice.getId())
-                .ifPresent(ledgerEntryRepository::delete);
+        var entry = ledgerService.entryFor("SALES_INVOICE", invoice.getId());
+        if (entry != null) ledgerEntryRepository.delete(entry);
 
         invoice.setStatus(InvoiceStatus.CANCELLED);
         return salesInvoiceRepository.save(invoice);

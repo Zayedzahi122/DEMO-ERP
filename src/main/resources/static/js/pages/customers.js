@@ -44,13 +44,65 @@ window.PAGE = {
           { key: 'total', label: 'Total Spent', render: (r) => '<span class="fw-bold text-green">' + EDY.fmt.money(r.total) + '</span>' },
           { key: 'id', label: 'Actions', render: (r) =>
             '<button class="btn btn-soft-primary btn-icon me-1" data-view="' + r.id + '" title="View detail"><i class="bi bi-eye"></i></button>' +
+            '<button class="btn btn-ghost btn-icon me-1" data-print="' + r.id + '" title="Preview and print"><i class="bi bi-printer"></i></button>' +
             '<button class="btn btn-ghost btn-icon me-1" data-edit="' + r.id + '" title="Edit"><i class="bi bi-pencil"></i></button>' +
             '<button class="btn btn-soft-danger btn-icon" data-del="' + r.id + '" title="Delete"><i class="bi bi-trash"></i></button>' }
         ]
       });
       box.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => showDetail(Number(b.dataset.view))));
+      box.querySelectorAll('[data-print]').forEach(b => b.addEventListener('click', () => printCustomer(Number(b.dataset.print))));
       box.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => openEdit(Number(b.dataset.edit))));
       box.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => remove(Number(b.dataset.del))));
+    }
+
+    /**
+     * A customer print is a statement: who they are, what they have bought, and
+     * what that came to. Printing only the contact block would leave out the half
+     * of the record someone actually asks for.
+     */
+    function printCustomer(id) {
+      const c = customers.find(x => x.id === id);
+      if (!c) return;
+      const st = stats(id);
+      const custSales = sales
+        .filter(s => s.status !== 'CANCELLED' && s.customer && s.customer.id === id)
+        .sort((a, b) => (b.id || 0) - (a.id || 0));
+      const statement = EDY.print.list('Order history', [
+        { label: 'Invoice' },
+        { label: 'Date' },
+        { label: 'Total', align: 'r' },
+        { label: 'Payment' }
+      ], custSales.map(s => [
+        esc(s.invoiceNumber),
+        esc(s.invoiceDate || '\u2014'),
+        esc(EDY.fmt.money(s.totalAmount)),
+        esc(s.paymentMethod || 'CASH')
+      ]), {
+        bare: true,
+        summary: [
+          { label: 'Orders', value: String(st.count) },
+          { label: 'Total spent', value: EDY.fmt.money(st.total) },
+          { label: 'Average order', value: EDY.fmt.money(st.count ? st.total / st.count : 0), bold: true }
+        ]
+      });
+
+      EDY.print.preview({
+        title: c.name,
+        subtitle: 'Customer statement',
+        html: EDY.print.record('Customer statement', c.name, [
+          ['Name', c.name],
+          ['Phone', c.phone || '\u2014'],
+          ['Email', c.email || '\u2014'],
+          ['Address', c.address || '\u2014'],
+          ['Notes', c.notes || '\u2014'],
+          ['Total orders', String(st.count)],
+          ['Total spent', EDY.fmt.money(st.total)]
+        ], {
+          bodyLabel: 'Order history',
+          body: custSales.length ? statement
+            : '<div class="pr-muted" style="font-size:12px;color:#64748b">No orders yet.</div>'
+        })
+      });
     }
 
     function fillForm(c) {

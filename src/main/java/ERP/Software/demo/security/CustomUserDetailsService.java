@@ -9,6 +9,7 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -24,9 +25,20 @@ public class CustomUserDetailsService implements UserDetailsService {
         if (!user.isActive()) {
             throw new UsernameNotFoundException("User is disabled: " + username);
         }
+
+        List<SimpleGrantedAuthority> authorities = new ArrayList<>();
+        authorities.add(new SimpleGrantedAuthority(
+                "ROLE_" + (user.getRole() != null ? user.getRole() : "USER")));
+        // Super admin is an extra authority on top of the job role, never a role in
+        // its own right. Keeping them separate means the Users page still shows the
+        // person's actual job while the platform grant is checked on its own.
+        if (user.isSuperAdmin()) {
+            authorities.add(new SimpleGrantedAuthority("ROLE_SUPER_ADMIN"));
+        }
+
         return org.springframework.security.core.userdetails.User.withUsername(user.getUsername())
                 .password(user.getPassword())
-                .authorities(List.of(new SimpleGrantedAuthority("ROLE_" + (user.getRole() != null ? user.getRole() : "USER"))))
+                .authorities(authorities)
                 .disabled(false)
                 .build();
     }

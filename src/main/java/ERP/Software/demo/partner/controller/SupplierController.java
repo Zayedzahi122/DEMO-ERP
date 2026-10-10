@@ -1,5 +1,6 @@
 package ERP.Software.demo.partner.controller;
 
+import ERP.Software.demo.business.service.TenantContext;
 import ERP.Software.demo.common.exception.ResourceNotFoundException;
 import ERP.Software.demo.partner.model.Supplier;
 import ERP.Software.demo.partner.repository.SupplierRepository;
@@ -16,20 +17,27 @@ import java.util.List;
 public class SupplierController {
 
     private final SupplierRepository supplierRepository;
+    private final TenantContext tenant;
 
     @GetMapping
     public List<Supplier> getAll() {
-        return supplierRepository.findAll();
+        Long businessId = tenant.idOrNull();
+        return businessId == null
+                ? supplierRepository.findAllByOrderByNameAsc()
+                : supplierRepository.findAllByBusinessIdOrderByNameAsc(businessId);
     }
 
     @GetMapping("/{id}")
     public Supplier getOne(@PathVariable Long id) {
-        return supplierRepository.findById(id)
+        Supplier supplier = supplierRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Supplier not found: " + id));
+        tenant.check(supplier.getBusinessId(), "supplier");
+        return supplier;
     }
 
     @PostMapping
     public ResponseEntity<Supplier> create(@Valid @RequestBody Supplier supplier) {
+        tenant.stamp(supplier);
         return ResponseEntity.ok(supplierRepository.save(supplier));
     }
 

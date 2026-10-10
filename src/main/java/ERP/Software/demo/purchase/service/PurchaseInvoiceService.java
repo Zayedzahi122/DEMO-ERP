@@ -2,6 +2,7 @@ package ERP.Software.demo.purchase.service;
 
 import ERP.Software.demo.accounting.model.EntryType;
 import ERP.Software.demo.accounting.service.LedgerService;
+import ERP.Software.demo.business.service.TenantContext;
 import ERP.Software.demo.common.exception.ResourceNotFoundException;
 import ERP.Software.demo.common.money.Totals;
 import ERP.Software.demo.inventory.model.Product;
@@ -38,20 +39,27 @@ public class PurchaseInvoiceService {
     private final LedgerService ledgerService;
     private final StockMovementRepository stockMovementRepository;
     private final SettingsService settingsService;
+    private final TenantContext tenant;
 
     public List<PurchaseInvoice> findAll() {
-        return purchaseInvoiceRepository.findAll();
+        Long businessId = tenant.idOrNull();
+        return businessId == null
+                ? purchaseInvoiceRepository.findAllByOrderByInvoiceDateDescIdDesc()
+                : purchaseInvoiceRepository.findAllByBusinessIdOrderByInvoiceDateDescIdDesc(businessId);
     }
 
     public PurchaseInvoice findById(Long id) {
-        return purchaseInvoiceRepository.findById(id)
+        PurchaseInvoice invoice = purchaseInvoiceRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Purchase invoice not found: " + id));
+        tenant.check(invoice.getBusinessId(), "purchase invoice");
+        return invoice;
     }
 
     @Transactional
     public PurchaseInvoice createInvoice(PurchaseInvoiceRequest request) {
         Supplier supplier = supplierRepository.findById(request.getSupplierId())
                 .orElseThrow(() -> new ResourceNotFoundException("Supplier not found: " + request.getSupplierId()));
+        tenant.check(supplier.getBusinessId(), "supplier");
 
         PurchaseInvoice invoice = PurchaseInvoice.builder()
                 .invoiceNumber("PO-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase())
@@ -64,6 +72,7 @@ public class PurchaseInvoiceService {
                 .taxAmount(BigDecimal.ZERO)
                 .totalAmount(BigDecimal.ZERO)
                 .build();
+        tenant.stamp(invoice);
 
         BigDecimal subtotal = BigDecimal.ZERO;
 
@@ -81,20 +90,23 @@ public class PurchaseInvoiceService {
             invoice.addItem(item);
 
             productService.adjustStock(product.getId(), itemReq.getQuantity());
-            stockMovementRepository.save(StockMovement.builder()
+            StockMovement movement = StockMovement.builder()
                     .product(product)
                     .type("IN")
                     .quantity(itemReq.getQuantity())
                     .note("Purchase")
                     .reference("PURCHASE")
-                    .build());
+                    .build();
+            tenant.stamp(movement);
+            stockMovementRepository.save(movement);
 
             subtotal = subtotal.add(lineTotal);
         }
 
         // Shared with sales/quotations: caps the discount at the subtotal and
         // rounds to the decimal scale configured in Settings.
-        Totals.Result t = Totals.of(subtotal, invoice.getDiscount(), settingsService.vatRate(), settingsService.moneyScale());
+        Totals.Result t = Totals.of(subtotal, invoice.getDiscount(), settingsService.taxRate(),
+                settingsService.moneyScale(), settingsService.taxInclusive());
 
         invoice.setSubtotal(t.subtotal());
         invoice.setDiscount(t.discount());

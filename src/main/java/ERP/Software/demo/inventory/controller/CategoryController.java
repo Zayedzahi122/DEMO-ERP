@@ -1,5 +1,6 @@
 package ERP.Software.demo.inventory.controller;
 
+import ERP.Software.demo.business.service.TenantContext;
 import ERP.Software.demo.common.exception.ResourceNotFoundException;
 import ERP.Software.demo.inventory.model.Category;
 import ERP.Software.demo.inventory.repository.CategoryRepository;
@@ -16,20 +17,32 @@ import java.util.List;
 public class CategoryController {
 
     private final CategoryRepository categoryRepository;
+    private final TenantContext tenant;
 
     @GetMapping
     public List<Category> getAll() {
-        return categoryRepository.findAll();
+        Long businessId = tenant.idOrNull();
+        return businessId == null
+                ? categoryRepository.findAllByOrderByNameAsc()
+                : categoryRepository.findAllByBusinessIdOrderByNameAsc(businessId);
     }
 
     @GetMapping("/{id}")
     public Category getOne(@PathVariable Long id) {
-        return categoryRepository.findById(id)
+        Category category = categoryRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Category not found: " + id));
+        tenant.check(category.getBusinessId(), "category");
+        return category;
     }
 
     @PostMapping
     public ResponseEntity<Category> create(@Valid @RequestBody Category category) {
+        Long businessId = tenant.id();
+        if (categoryRepository.existsByBusinessIdAndNameIgnoreCase(businessId, category.getName())) {
+            throw new IllegalArgumentException(
+                    "A category called '" + category.getName() + "' already exists.");
+        }
+        tenant.stamp(category);
         Category saved = categoryRepository.save(category);
         return ResponseEntity.ok(saved);
     }

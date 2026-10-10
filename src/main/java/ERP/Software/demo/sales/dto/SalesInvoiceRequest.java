@@ -27,6 +27,10 @@ public class SalesInvoiceRequest {
 
     private String paymentMethod;
 
+    // Optional: the location (branch) the sale was made from. When omitted on an
+    // update, the invoice keeps its current location.
+    private String location;
+
     // Optional: when omitted, the invoice keeps its current status.
     // CANCELLED is intentionally not accepted here - use the cancel endpoint.
     private InvoiceStatus status;

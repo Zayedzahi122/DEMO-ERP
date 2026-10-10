@@ -61,7 +61,7 @@ window.PAGE = {
         '<button class="btn btn-ghost btn-sm" id="frmClear"><i class="bi bi-x-lg me-1"></i>Clear</button>' +
         '<span class="ms-auto"></span>' +
         '<button class="btn btn-ghost btn-sm" id="frmXls"><i class="bi bi-file-earmark-excel me-1"></i>Excel</button>' +
-        '<button class="btn btn-ghost btn-sm" id="frmPdf"><i class="bi bi-file-earmark-pdf me-1"></i>PDF</button>' +
+        '<button class="btn btn-ghost btn-sm" id="frmPdf"><i class="bi bi-printer me-1"></i>Print</button>' +
         '</div>';
     }
     function wireToolbar(renderFn) {
@@ -88,20 +88,27 @@ window.PAGE = {
       const blob = new Blob(['\ufeff' + (exportHead.join(',') + '\n') + exportRows.map(r => r.map(c => '"' + String(c ?? '').replace(/"/g, '""') + '"').join(',')).join('\n')], { type: 'text/csv;charset=utf-8' });
       const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = (exportTitle || 'payment-account') + '-' + today + '.csv'; a.click();
     }
+    /**
+     * Every section already declares what it shows through setExport(), so print
+     * goes through that same data — one report, one document — instead of a second
+     * hand-built table that could drift away from what is on screen. The old PDF
+     * button opened a window and printed on arrival; this shows the report first,
+     * and the browser's own dialog still offers Save as PDF.
+     */
     function doPdf() {
       if (!exportRows.length) { EDY.ui.toast('Nothing to export', 'warning'); return; }
-      const html = '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(exportTitle) + '</title>' +
-        '<style>body{font-family:Inter,Arial,sans-serif;padding:24px;color:#0f172a}h1{font-size:20px;margin:0 0 4px}h2{font-size:12px;font-weight:400;color:#64748b;margin:0 0 16px}table{width:100%;border-collapse:collapse;font-size:11px}th,td{border:1px solid #cbd5e1;padding:6px 8px;text-align:left}th{background:#f1f5f9;font-weight:700}td.r{text-align:right}.muted{color:#64748b}</style></head><body>' +
-        '<h1>' + esc(exportTitle) + '</h1><h2>' + 'Generated ' + new Date().toLocaleString() + '</h2>' +
-        '<table><thead><tr>' + exportHead.map(h => '<th>' + esc(h) + '</th>').join('') + '</tr></thead><tbody>' +
-        exportRows.map(r => '<tr>' + r.map(c => '<td>' + esc(c) + '</td>').join('') + '</tr>').join('') +
-        '</tbody></table></body></html>';
-      const w = window.open('', '_blank', 'width=900,height=700');
-      if (!w) { window.print(); return; }
-      w.document.write(html);
-      w.document.close();
-      w.focus();
-      setTimeout(() => { w.print(); }, 400);
+      // Right-align a column only when every value in it is numeric, so a column of
+      // references is not indented as though it were money.
+      const numeric = exportHead.map((h, i) =>
+        exportRows.every(r => r[i] === '' || r[i] == null || Number.isFinite(Number(r[i]))));
+      EDY.print.preview({
+        title: exportTitle,
+        subtitle: 'Generated ' + new Date().toLocaleString(),
+        html: EDY.print.list(exportTitle,
+          exportHead.map((h, i) => ({ label: h, align: numeric[i] ? 'r' : 'l' })),
+          exportRows.map(r => r.map(c => esc(c == null ? '' : c))),
+          { lines: [] })
+      });
     }
     function setExport(title, head, rows) { exportTitle = title; exportHead = head; exportRows = rows; }
 
@@ -147,6 +154,11 @@ window.PAGE = {
     if (par.get('view') && secById[par.get('view')]) activeKey = par.get('view');
 
     renderList();
+    // The sections read the arrays loaded here, so the first paint has to wait for
+    // them — otherwise List Accounts opens on "No data in this period" with four
+    // accounts already in the system, and only recovers the next time something is
+    // deleted or moved.
+    await loadData();
     secById[activeKey].run();
 
     /* ================= List Accounts ================= */
@@ -172,6 +184,7 @@ window.PAGE = {
             '<td class="text-end fw-semibold">' + money(a.currentBalance) + '</td>' +
             '<td>' + (a.active ? '<span class="badge bg-soft-green">Active</span>' : '<span class="badge bg-soft-gray">Inactive</span>') + '</td>' +
             '<td><button class="btn btn-ghost btn-icon me-1" data-edit="' + a.id + '" title="Edit"><i class="bi bi-pencil"></i></button>' +
+            '<button class="btn btn-ghost btn-icon me-1" data-print="' + a.id + '" title="Preview and print"><i class="bi bi-printer"></i></button>' +
             '<button class="btn btn-soft-danger btn-icon" data-del="' + a.id + '" title="Delete"><i class="bi bi-trash"></i></button></td></tr>').join('')
         )) : empty()));
       document.getElementById('paAdd').addEventListener('click', () => acctForm(null));
@@ -181,7 +194,9 @@ window.PAGE = {
         rv.addEventListener('click', (e) => {
           const eb = e.target.closest('[data-edit]');
           const db = e.target.closest('[data-del]');
-          if (eb) { const a = accounts.find(x => x.id === Number(eb.dataset.edit)); if (a) acctForm(a); }
+          const pb = e.target.closest('[data-print]');
+          if (pb) printAccount(Number(pb.dataset.print));
+          else if (eb) { const a = accounts.find(x => x.id === Number(eb.dataset.edit)); if (a) acctForm(a); }
           else if (db) delAccount(Number(db.dataset.del));
         });
       }
@@ -199,6 +214,7 @@ window.PAGE = {
           '<td class="text-end fw-semibold">' + money(a.currentBalance) + '</td>' +
           '<td>' + (a.active ? '<span class="badge bg-soft-green">Active</span>' : '<span class="badge bg-soft-gray">Inactive</span>') + '</td>' +
           '<td><button class="btn btn-ghost btn-icon me-1" data-edit="' + a.id + '" title="Edit"><i class="bi bi-pencil"></i></button>' +
+          '<button class="btn btn-ghost btn-icon me-1" data-print="' + a.id + '" title="Preview and print"><i class="bi bi-printer"></i></button>' +
           '<button class="btn btn-soft-danger btn-icon" data-del="' + a.id + '" title="Delete"><i class="bi bi-trash"></i></button></td></tr>';
       }
     }
@@ -206,6 +222,25 @@ window.PAGE = {
     function typeBadge(t) {
       const c = { CASH: 'bg-soft-green', BANK: 'bg-soft-blue', CARD: 'bg-soft-purple', MOBILE: 'bg-soft-amber', OTHER: 'bg-soft-gray' };
       return '<span class="badge ' + (c[t] || 'bg-soft-gray') + '">' + esc(t || 'OTHER') + '</span>';
+    }
+
+    /** One payment account on paper: what it is and what it is holding. */
+    function printAccount(id) {
+      const a = accounts.find(x => x.id === id);
+      if (!a) return;
+      EDY.print.preview({
+        title: a.name,
+        subtitle: 'Payment account ' + (a.code || ''),
+        html: EDY.print.record('Payment account', a.code || '', [
+          ['Code', a.code || '\u2014'],
+          ['Name', a.name],
+          ['Type', a.type || 'OTHER'],
+          ['Bank / provider', a.bankDetails || '\u2014'],
+          ['Opening balance', money(a.openingBalance)],
+          ['Current balance', money(a.currentBalance)],
+          ['Status', a.active !== false ? 'Active' : 'Inactive']
+        ])
+      });
     }
     function acctForm(acct) {
       document.getElementById('acctModalTitle').textContent = acct ? 'Edit Account' : 'Add Account';

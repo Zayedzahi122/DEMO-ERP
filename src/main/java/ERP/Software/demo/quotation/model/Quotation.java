@@ -1,4 +1,6 @@
-﻿package ERP.Software.demo.quotation.model;
+package ERP.Software.demo.quotation.model;
+
+import ERP.Software.demo.business.model.TenantScoped;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import ERP.Software.demo.partner.model.Customer;
@@ -14,11 +16,19 @@ import java.util.List;
 @Table(name = "quotations")
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor @Builder
-public class Quotation {
+public class Quotation implements TenantScoped {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    /**
+     * The business this row belongs to. Set once when the row is created and never
+     * changed - it is what keeps one company's records out of another company's
+     * lists, and what {@code TenantContext.check} tests on every get-by-id.
+     */
+    @Column(name = "business_id")
+    private Long businessId;
 
     @Column(nullable = false, unique = true)
     private String quotationNumber;

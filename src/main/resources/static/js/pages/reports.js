@@ -1,4 +1,4 @@
-﻿/* EDY ERP â€” Reports (21 reports, grouped by module) */
+/* EDY ERP — Reports (21 reports, grouped by module) */
 window.PAGE = {
   init: async function () {
     const box = document.getElementById('pageContent');
@@ -134,7 +134,11 @@ window.PAGE = {
       '<button class="btn btn-ghost btn-sm" id="btnCsv"><i class="bi bi-download me-1"></i>CSV</button>' +
       '</div></div>' +
       '<div class="reports-layout">' +
-      '<aside class="card report-list"><div class="card-body p-2" id="reportList"></div></aside>' +
+      '<aside class="card report-list">' +
+        '<div class="report-list-search"><div class="input-group input-group-sm"><span class="input-group-text input-group-text-soft"><i class="bi bi-search"></i></span>' +
+        '<input class="form-control" id="reportSearch" placeholder="Find a report" autocomplete="off"></div></div>' +
+        '<div class="card-body p-2 pt-0" id="reportList"></div>' +
+      '</aside>' +
       '<section class="report-view" id="reportView"></section>' +
       '</div>';
 
@@ -766,15 +770,43 @@ window.PAGE = {
 
     /* ---------- sidebar ---------- */
     let activeKey = 'pl';
+    // Which groups are expanded in the sidebar. The group holding the open
+    // report is open by default; every group opens and closes on its own click.
+    const openGroups = {};
     function renderList() {
       const el = document.getElementById('reportList');
-      el.innerHTML = GROUPS.map(g =>
-        '<div class="report-group mb-1">' +
-        '<div class="report-group-label"><i class="bi ' + g.icon + ' me-1"></i>' + esc(g.name) + '</div>' +
-        g.reports.map(r =>
+      const needle = ((document.getElementById('reportSearch') || {}).value || '').trim().toLowerCase();
+      const searching = !!needle;
+      let shown = 0;
+      el.innerHTML = GROUPS.map(g => {
+        const items = g.reports.filter(r =>
+          !needle || r.label.toLowerCase().indexOf(needle) !== -1 || g.name.toLowerCase().indexOf(needle) !== -1);
+        if (!items.length) return '';
+        shown += items.length;
+        if (openGroups[g.name] === undefined) {
+          openGroups[g.name] = searching || items.some(r => r.key === activeKey);
+        }
+        const open = searching || openGroups[g.name];
+        return '<div class="report-group' + (open ? ' open' : '') + '">' +
+        '<button class="report-group-label" data-group="' + g.name + '" type="button" aria-expanded="' + open + '">' +
+        '<span><i class="bi ' + g.icon + ' me-1"></i>' + esc(g.name) + '</span>' +
+        '<span class="report-group-meta"><span class="report-group-count">' + items.length + '</span>' +
+        '<i class="bi bi-chevron-down report-group-chev"></i></span></button>' +
+        '<div class="report-group-body">' +
+        items.map(r =>
           '<button class="report-btn' + (r.key === activeKey ? ' active' : '') + '" data-key="' + r.key + '">' +
-          '<i class="bi ' + r.icon + '"></i><span>' + esc(r.label) + '</span></button>').join('') +
-        '</div>').join('');
+          '<i class="bi ' + r.icon + '"></i><span>' + esc(r.label) + '</span>' +
+          (r.key === activeKey ? '<i class="bi bi-check2 report-btn-tick"></i>' : '') +
+          '</button>').join('') +
+        '</div></div>';
+      }).join('');
+      if (!shown) {
+        el.innerHTML = '<div class="report-none py-4 text-center text-muted"><i class="bi bi-search fs-4 d-block mb-1"></i>No reports match \u201c' + esc(needle) + '\u201d</div>';
+      }
+      el.querySelectorAll('.report-group-label').forEach(h => h.addEventListener('click', () => {
+        openGroups[h.dataset.group] = !openGroups[h.dataset.group];
+        renderList();
+      }));
       el.querySelectorAll('.report-btn').forEach(b => b.addEventListener('click', () => {
         activeKey = b.dataset.key;
         renderList();
@@ -786,7 +818,22 @@ window.PAGE = {
       periodDays = Number(document.getElementById('periodFilter').value);
       if (RENDER[activeKey]) RENDER[activeKey]();
     });
-    document.getElementById('btnPrint').addEventListener('click', () => window.print());
+    // Find a report by name while typing; the list re-filters live.
+    const reportSearch = document.getElementById('reportSearch');
+    if (reportSearch) reportSearch.addEventListener('input', renderList);
+    // Print the report that is open, not the whole screen: window.print() used to
+    // send the sidebar, the filters and the top bar along with the numbers.
+    document.getElementById('btnPrint').addEventListener('click', () => {
+      const view = document.getElementById('reportView');
+      if (!view) return;
+      const active = document.querySelector('#reportList .report-btn.active span');
+      const period = document.getElementById('periodFilter');
+      EDY.print.preview({
+        title: (active && active.textContent.trim()) || 'Report',
+        subtitle: period && period.selectedOptions[0] ? period.selectedOptions[0].textContent : '',
+        html: '<div class="app-print">' + EDY.print.cleaned(view) + '</div>'
+      });
+    });
     document.getElementById('btnCsv').addEventListener('click', () => {
       if (!csvRows.length) { EDY.ui.toast('Nothing to export', 'warning'); return; }
       const blob = new Blob(['\ufeff' + csvRows.map(r => r.map(c => '"' + String(c ?? '').replace(/"/g, '""') + '"').join(',')).join('\n')], { type: 'text/csv;charset=utf-8' });

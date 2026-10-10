@@ -1,4 +1,6 @@
-﻿package ERP.Software.demo.sales.model;
+package ERP.Software.demo.sales.model;
+
+import ERP.Software.demo.business.model.TenantScoped;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import ERP.Software.demo.partner.model.Customer;
@@ -14,11 +16,27 @@ import java.util.List;
 @Table(name = "sales_invoices")
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor @Builder
-public class SalesInvoice {
+public class SalesInvoice implements TenantScoped {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    /**
+     * The business this row belongs to. Set once when the row is created and never
+     * changed - it is what keeps one company's records out of another company's
+     * lists, and what {@code TenantContext.check} tests on every get-by-id.
+     */
+    @Column(name = "business_id")
+    private Long businessId;
+
+    /**
+     * The place this sale was made from (e.g. "Main Branch"). Filled from the top
+     * bar location picker when the sale is created, editable afterwards so the
+     * sales list and printed invoices can say where the money came in.
+     */
+    @Column(length = 191)
+    private String location;
 
     @Column(nullable = false, unique = true)
     private String invoiceNumber;

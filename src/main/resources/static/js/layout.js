@@ -19,7 +19,16 @@ EDY.modules = [
 
 EDY.layout = (() => {
 
+  // Sits above everything else because it is not a module - it is the platform
+  // owner's surface, above the businesses themselves. Only rendered for super
+  // admins; see EDY.tenant.isSuperAdmin() in init().
+  const SUPER_ADMIN_ITEM = {
+    key: 'super-admin', href: '/super-admin', icon: 'bi-buildings-fill', label: 'Super Admin',
+    superAdminOnly: true
+  };
+
   const NAV = [
+    SUPER_ADMIN_ITEM,
     { key: 'dashboard', href: '/', icon: 'bi-grid-1x2-fill', label: 'Dashboard' },
     { key: 'pos', href: '/pos', icon: 'bi-bag-check-fill', label: 'POS / New Sale' },
     { key: 'sales', icon: 'bi-receipt', label: 'Sales', children: [
@@ -67,18 +76,31 @@ EDY.layout = (() => {
       { key: 'pay-cashflow', href: '/payments?view=cashflow', icon: 'bi-cash-stack', label: 'Cash Flow' },
       { key: 'pay-report', href: '/payments?view=statement', icon: 'bi-receipt-cutoff', label: 'Payment Account Report' }
     ]},
-    { key: 'reports', icon: 'bi-graph-up-arrow', label: 'Reports', children: [
-      { key: 'rep-main', href: '/reports', icon: 'bi-bar-chart-line', label: 'Reports & Analytics' },
-      { key: 'rep-tax', href: '/reports', icon: 'bi-percent', label: 'VAT / Tax Report' },
-      { key: 'rep-charts', href: '/reports', icon: 'bi-pie-chart', label: 'Charts' }
-    ]},
+    { key: 'reports', href: '/reports', icon: 'bi-graph-up-arrow', label: 'Reports' },
     { key: 'users', href: '/users', icon: 'bi-person-gear', label: 'Users & Roles' },
     { key: 'settings', href: '/settings', icon: 'bi-sliders', label: 'Settings' }
   ];
 
-  const BRANCHES = ['Main Branch \u2013 Muscat', 'Sohar Branch', 'Salalah Branch'];
+  // A business's locations come from its registry record (set by the Super Admin
+  // when creating the business) and reach this screen through the settings
+  // snapshot. The picker always has something to show, so it falls back to a
+  // single default rather than rendering an empty menu.
+  const DEFAULT_LOCATION = 'Main Branch';
   let me = null;
   let navItems = NAV;
+  /** Super admin state from /api/businesses/context. Null until loaded. */
+  let tenantCtx = null;
+
+  function visibleNav() {
+    // The Super Admin entry belongs to the admin console only: once a super admin
+    // has stepped into a business (actingBusiness set) the sidebar is that
+    // business's own list, and business accounts never get it at all — they reach
+    // the console through the top-bar button instead.
+    if (!tenantCtx || !tenantCtx.superAdmin || tenantCtx.actingBusiness) {
+      return navItems.filter(n => !n.superAdminOnly);
+    }
+    return navItems;
+  }
 
   function shell(user) {
     const main = document.getElementById('pageContent');
@@ -87,7 +109,7 @@ EDY.layout = (() => {
     shellDiv.className = 'app-shell';
     main.parentNode.insertBefore(shellDiv, main);
 
-    const navHtml = navItems.map(n => {
+    const navHtml = visibleNav().map(n => {
       if (n.children && n.children.length) {
         return '<div class="nav-group" data-group="' + n.key + '">' +
           '<button class="nav-item" type="button" data-nav="' + n.key + '">' +
@@ -105,10 +127,18 @@ EDY.layout = (() => {
         '<i class="bi ' + n.icon + '"></i><span>' + n.label + '</span></button>';
     }).join('');
 
+    // A logo uploaded in Settings replaces the placeholder initial. It must sit in
+    // the same fixed 38px box the placeholder used; without one the browser stretches
+    // the image to the sidebar's full width and shoves the business name off screen.
+    const bizLogo = EDY.settings['biz.logo'];
+    const logoMark = /^data:image\//.test(bizLogo || '')
+      ? '<img class="logo" src="' + escapeHtml(bizLogo) + '" alt="' + escapeHtml(EDY.settings['biz.name'] || 'logo') + '">'
+      : '<div class="logo">E</div>';
+
     shellDiv.innerHTML =
       '<aside class="sidebar" id="edySidebar">' +
         '<div class="sidebar-brand">' +
-          '<div class="logo">E</div>' +
+          logoMark +
           '<div><div class="brand-name">' + escapeHtml(EDY.settings['biz.name'] || 'DEMO ERP') + '</div><div class="brand-sub">Business Suite</div></div>' +
         '</div>' +
         '<nav class="sidebar-nav">' +
@@ -157,11 +187,62 @@ EDY.layout = (() => {
     return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
+  /** The top-bar language toggle shows the language that is currently on. */
+  function syncLangLabel() {
+    const el = document.getElementById('edyLangLabel');
+    if (!el) return;
+    const ar = !!(EDY.i18n && EDY.i18n.isArabic());
+    el.textContent = ar ? '\u0639\u0631\u0628\u064a' : 'EN';
+    const btn = document.getElementById('edyLangBtn');
+    if (btn) btn.title = ar ? 'Language / \u0627\u0644\u0644\u063a\u0629' : 'Language / \u0627\u0644\u0644\u063a\u0629';
+  }
+
+  /** The locations to offer in the top bar, defaulting to a single generic one. */
+  function locationsList() {
+    const locs = EDY.settings && Array.isArray(EDY.settings.locations)
+      ? EDY.settings.locations.map(s => String(s || '').trim()).filter(Boolean)
+      : [];
+    return locs.length ? locs : [DEFAULT_LOCATION];
+  }
+
+  /** The location the user picked, as long as it is still one the business has. */
+  function pickBranch() {
+    const saved = localStorage.getItem('edy.branch');
+    const locs = locationsList();
+    return (saved && locs.indexOf(saved) >= 0) ? saved : locs[0];
+  }
+
   function topbar(user, bodyMain) {
-    const branch = localStorage.getItem('edy.branch') || BRANCHES[0];
+    const locs = locationsList();
+    const branch = pickBranch();
     const tb = document.getElementById('edyTopbar');
     tb.innerHTML =
       '<button class="icon-btn d-lg-none" id="edyMenuBtn" type="button"><i class="bi bi-list"></i></button>' +
+      // POS is the screen people are on when they are actually selling, so it is one
+      // click from anywhere. Always shown: every business has a till, and the sidebar
+      // buries POS under a scroll on a short window.
+      '<a class="tb-quick tb-pos" href="/pos" title="Point of Sale">' +
+        '<i class="bi bi-bag-check-fill"></i><span>POS</span></a>' +
+      // Printing is asked for from every screen, so the entry point lives in the top
+      // bar instead of being re-invented (and left off) by each page.
+      '<button class="tb-quick tb-print" type="button" id="edyPrintBtn" ' +
+        'title="Preview and print this page">' +
+        '<i class="bi bi-printer-fill"></i><span>Print</span></button>' +
+      // The way back out. Only meaningful while looking into one business, and it has
+      // to be at the top and always visible: without it a super admin who switched in
+      // can get stuck browsing a company with no sign they left the admin console.
+      (tenantCtx && tenantCtx.superAdmin && tenantCtx.actingBusiness
+        ? '<a class="tb-quick tb-back" href="/super-admin" id="edyBackToAdmin" ' +
+          'title="Leave ' + escapeHtml(tenantCtx.actingBusiness.name) + ' and manage businesses">' +
+          '<i class="bi bi-arrow-left"></i><span>Super Admin</span></a>'
+        : '') +
+      // Business accounts have no Super Admin entry in their sidebar, but the owner
+      // still needs a way up to the console: this button leads there (the page
+      // itself asks for the administrator sign-in when the account is not one).
+      (tenantCtx && !tenantCtx.superAdmin
+        ? '<a class="tb-quick tb-back" href="/super-admin" title="Open the Super Admin console">' +
+          '<i class="bi bi-buildings-fill"></i><span>Super Admin</span></a>'
+        : '') +
       '<div class="topbar-search">' +
         '<i class="bi bi-search"></i>' +
         '<input type="text" id="edySearch" placeholder="Search pages, products, invoices\u2026" autocomplete="off">' +
@@ -170,8 +251,8 @@ EDY.layout = (() => {
       '</div>' +
       '<div class="tb-divider d-none d-md-block"></div>' +
       '<div class="dropdown">' +
-        '<button class="icon-btn" id="edyLangBtn" data-bs-toggle="dropdown" aria-label="Language" title="Language"><i class="bi bi-globe2"></i></button>' +
-        '<ul class="dropdown-menu shadow-sm">' +
+        '<button class="tb-quick tb-lang" id="edyLangBtn" data-bs-toggle="dropdown" aria-label="Language" title="Language / اللغة"><span id="edyLangLabel">EN</span></button>' +
+        '<ul class="dropdown-menu shadow-sm dropdown-menu-end">' +
           '<li><button class="dropdown-item edy-lang" data-l="en" type="button">English</button></li>' +
           '<li><button class="dropdown-item edy-lang" data-l="ar" type="button">العربية</button></li>' +
         '</ul>' +
@@ -180,7 +261,7 @@ EDY.layout = (() => {
         '<button class="branch-pill" data-bs-toggle="dropdown"><i class="bi bi-geo-alt-fill"></i>' +
         '<span id="edyBranchLabel">' + escapeHtml(branch) + '</span><i class="bi bi-chevron-down" style="font-size:11px"></i></button>' +
         '<ul class="dropdown-menu shadow-sm">' +
-          BRANCHES.map(b => '<li><a class="dropdown-item edy-branch" data-b="' + escapeHtml(b) + '" href="#">' + escapeHtml(b) + '</a></li>').join('') +
+          locs.map(b => '<li><a class="dropdown-item edy-branch" data-b="' + escapeHtml(b) + '" href="#">' + escapeHtml(b) + '</a></li>').join('') +
         '</ul>' +
       '</div>' +
       '<div class="dropdown">' +
@@ -209,9 +290,34 @@ EDY.layout = (() => {
     document.querySelectorAll('.edy-lang').forEach(b => b.addEventListener('click', (e) => {
       e.preventDefault();
       if (EDY.i18n) EDY.i18n.setLang(b.dataset.l);
+      syncLangLabel();
     }));
+    // The top-bar way back to the admin console. Leaving the business is the point:
+    // a plain link would land on the Super Admin page still looking into that company,
+    // which reads as though the click did nothing.
+    const back = document.getElementById('edyBackToAdmin');
+    if (back) back.addEventListener('click', e => {
+      e.preventDefault();
+      back.classList.add('busy');
+      EDY.api.post('/api/businesses/leave')
+        .then(() => { location.href = '/super-admin'; })
+        .catch(err => {
+          back.classList.remove('busy');
+          EDY.ui.toast(err.message || 'Could not leave the business', 'danger');
+        });
+    });
+
+    // Preview the page currently on screen. Guarded: print.js is loaded after ui.js
+    // on every page, but a failed script must not take the top bar with it.
+    const printBtn = document.getElementById('edyPrintBtn');
+    if (printBtn) printBtn.addEventListener('click', () => {
+      if (EDY.print && EDY.print.page) EDY.print.page();
+      else EDY.ui.toast('Print is not available on this screen', 'warning');
+    });
+
     wireSearch();
     loadNotifications();
+    syncLangLabel();
   }
 
   function wireSearch() {
@@ -225,7 +331,7 @@ EDY.layout = (() => {
     input.addEventListener('focus', () => { if (input.value) showSearch(); });
     input.addEventListener('input', () => { if (input.value) showSearch(); else menu.classList.remove('show'); });
     const allItems = [];
-    navItems.forEach(n => {
+    visibleNav().forEach(n => {
       if (n.children) n.children.filter(c => c.href).forEach(c => allItems.push({ label: n.label + ' / ' + c.label, href: c.href, icon: c.icon || n.icon }));
       else allItems.push({ label: n.label, href: n.href, icon: n.icon });
     });
@@ -306,27 +412,106 @@ EDY.layout = (() => {
     } catch (e) {
       // keep the built-in defaults rather than blocking the page
     }
+    // Bring the saved display language along on a browser that has not chosen one
+    // yet: per-browser choice is the reader's, but a new device should not
+    // silently start in the other language.
+    try {
+      if (EDY.settings && EDY.settings['app.language'] && window.localStorage.getItem('edy.language') == null) {
+        if (EDY.i18n) EDY.i18n.setLang(EDY.settings['app.language']);
+      }
+    } catch (e) { /* non-fatal */ }
     if (me.modules && me.modules.length) {
-      navItems = NAV.filter(n => me.modules.includes(n.key));
+      navItems = NAV.filter(n => !n.superAdminOnly || isSuperAdminFromToken());
     }
-    if (me.modules && me.modules.length && !me.modules.includes(pageKey)) {
-      const first = navItems[0] && (navItems[0].href || (navItems[0].children && navItems[0].children[0].href)) || '/';
-      location.href = first;
+    // Super admin state: which business, if any, this session is looking into.
+    // Fetched before the shell renders so the sidebar link and the "viewing as"
+    // banner are right the first time rather than popping in afterwards.
+    try {
+      tenantCtx = await EDY.api.get('/api/businesses/context').catch(() => null);
+    } catch (e) {
+      tenantCtx = null;   // a 403 here just means "not a super admin"
+    }
+    // Every page loads tenant.js, but the app must still boot if one ever forgets.
+    // An exception here would abort init() before shell() and leave the page
+    // stuck on its loading spinner, so this is guarded rather than assumed.
+    try {
+      if (EDY.tenant) EDY.tenant.ctx = tenantCtx;
+    } catch (e) { /* no tenant module on this page */ }
+
+    const allowed = visibleNav();
+    if (me.modules && me.modules.length && !allowed.some(n => n.key === pageKey)) {
+      const first = allowed.find(n => me.modules.includes(n.key));
+      const target = first && (first.href || (first.children && first.children[0].href)) || '/';
+      location.href = target;
       return;
     }
     if (!shell(me)) return;
+    renderBanner();
     active(pageKey);
     window.EDY.me = me;
     document.documentElement.style.setProperty('--app-ready', '1');
     if (window.PAGE && typeof window.PAGE.init === 'function') {
-      setTimeout(() => window.PAGE.init(), 0);
+      setTimeout(() => {
+        let done;
+        try { done = window.PAGE.init(); } catch (e) { done = null; }
+        // Once a page has finished drawing itself, stamp the section-level print
+        // options on to it, and keep doing so as filters re-render the content.
+        Promise.resolve(done)
+          .then(() => { if (EDY.print) { EDY.print.scan(); EDY.print.observe(); } })
+          .catch(() => {});
+      }, 0);
     }
     document.body.style.opacity = '1';
   }
 
-  function branch() { return localStorage.getItem('edy.branch') || BRANCHES[0]; }
+  /** True when /api/auth/me says so, before the business context has loaded. */
+  function isSuperAdminFromToken() {
+    return !!(me && (me.superAdmin === true || me.role === 'SUPER_ADMIN'));
+  }
 
-  return { init, me: () => me, branch };
+  /**
+   * The "you are looking into another business" banner. It exists because every
+   * page's numbers change when a super admin switches, and a banner that did not
+   * say which company you were in would make that a trap.
+   */
+  function renderBanner() {
+    if (!tenantCtx || !tenantCtx.superAdmin) return;
+    const acting = tenantCtx.actingBusiness;
+    const bar = document.createElement('div');
+    bar.className = 'tenant-banner';
+    if (acting) {
+      bar.innerHTML =
+        '<i class="bi bi-eye-fill"></i>' +
+        '<span>Viewing <strong>' + escapeHtml(acting.name) + '</strong> — ' +
+        'you are seeing everything this business sees.</span>' +
+        '<button class="btn btn-sm btn-light ms-auto" id="edyLeaveBusiness" type="button">' +
+        'Back to all businesses</button>';
+    } else {
+      bar.classList.add('tenant-banner-all');
+      bar.innerHTML =
+        '<i class="bi bi-buildings-fill"></i>' +
+        '<span>You are seeing <strong>all businesses</strong> combined. ' +
+        'Open one to see it on its own.</span>';
+    }
+    const mainBody = document.querySelector('.main-body');
+    if (mainBody) mainBody.parentNode.insertBefore(bar, mainBody);
+
+    const leave = document.getElementById('edyLeaveBusiness');
+    if (leave) leave.addEventListener('click', async () => {
+      leave.disabled = true;
+      try {
+        await EDY.api.post('/api/businesses/leave');
+        location.reload();
+      } catch (e) {
+        EDY.ui.toast(e.message, 'danger');
+        leave.disabled = false;
+      }
+    });
+  }
+
+  function branch() { return pickBranch(); }
+
+  return { init, me: () => me, branch, tenant: () => tenantCtx };
 })();
 
 /* auto-boot: runs on every page load */

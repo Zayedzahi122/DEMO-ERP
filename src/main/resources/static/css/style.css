@@ -1,5 +1,5 @@
 /* ============================================================
-   DEMO ERP ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Design System
+   DEMO ERP - Design System
    SaaS-style business dashboard inspired theme
    ============================================================ */
 :root {
@@ -125,6 +125,9 @@ a { text-decoration: none; }
 }
 .sidebar-brand .brand-name { font-weight: 800; font-size: 16px; letter-spacing: -.01em; }
 .sidebar-brand .brand-sub { font-size: 11px; color: var(--text-muted); font-weight: 600; }
+/* A real uploaded logo fills the same 38px box as the placeholder, kept inside it
+   and on a plain white tile rather than the placeholder's gradient. */
+.sidebar-brand img.logo { object-fit: contain; background: #fff; box-shadow: 0 2px 8px rgba(15, 23, 42, .12); }
 
 .sidebar-nav { flex: 1; overflow-y: auto; padding: .9rem .8rem 1rem; }
 .sidebar-section { padding: .55rem .65rem .35rem; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: #94a3b8; font-weight: 700; }
@@ -171,6 +174,36 @@ a { text-decoration: none; }
 .topbar-search i { position: absolute; left: .95rem; top: 50%; transform: translateY(-50%); color: var(--text-muted); }
 .topbar-search kbd { position: absolute; right: .7rem; top: 50%; transform: translateY(-50%); border: 1px solid var(--border); border-radius: 6px; padding: 0 .4rem; font-size: 11px; background: #fff; color: var(--text-muted); }
 .topbar .tb-divider { width: 1px; height: 26px; background: var(--border-soft); }
+
+/* Quick actions pinned to the top bar. POS is the screen people are on when they
+   are actually selling, and "get me out of this company" is the one control a super
+   admin must never have to go hunting for, so both live here rather than in the
+   sidebar where they scroll away. */
+.tb-quick {
+  display: inline-flex; align-items: center; gap: .4rem; flex: 0 0 auto;
+  height: 34px; padding: 0 .8rem; border-radius: 10px;
+  font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap;
+  border: 1px solid var(--border); background: #fff; color: var(--text);
+  transition: background .15s, border-color .15s, transform .1s;
+  cursor: pointer; font-family: inherit;
+}
+.tb-quick:hover { background: var(--bg); border-color: var(--primary); color: var(--primary); text-decoration: none; }
+.tb-quick:active { transform: translateY(1px); }
+.tb-quick:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+/* The language toggle is readable even where the other quick pills drop their
+   labels on small screens, and it doubles as the current-language indicator. */
+.tb-lang { min-width: 46px; justify-content: center; padding: 0 .7rem; }
+.tb-lang span { font-weight: 800; letter-spacing: .5px; }
+@media (max-width: 767.98px) { .tb-quick.tb-lang span { display: inline; } }
+.tb-pos i { font-size: 15px; color: var(--primary); }
+.tb-pos:hover i { color: var(--primary); }
+.tb-print i { font-size: 15px; }
+.tb-back { background: var(--primary); border-color: var(--primary); color: #fff; }
+.tb-back:hover { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
+.tb-back i { font-size: 15px; }
+/* While leaving, so a double click cannot fire two requests. */
+.tb-back.busy { opacity: .6; pointer-events: none; }
+@media (max-width: 767.98px) { .tb-quick span { display: none; } .tb-quick { padding: 0 .6rem; } }
 
 .icon-btn {
   position: relative; width: 40px; height: 40px; border-radius: 11px;
@@ -256,8 +289,9 @@ a { text-decoration: none; }
 .product-thumb {
   width: 42px; height: 42px; border-radius: 10px; background: var(--bg);
   display: grid; place-items: center; font-size: 19px; color: var(--primary-600);
-  border: 1px solid var(--border-soft); flex-shrink: 0;
+  border: 1px solid var(--border-soft); flex-shrink: 0; overflow: hidden;
 }
+.product-thumb img { width: 100%; height: 100%; object-fit: cover; }
 
 /* ---------- Empty state ---------- */
 .empty-state { text-align: center; padding: 3rem 1rem; color: var(--text-muted); }
@@ -276,6 +310,9 @@ a { text-decoration: none; }
 .pos-tile .pt-name { font-size: 12.5px; font-weight: 700; }
 .pos-tile .pt-stock { font-size: 11px; }
 .pos-tile .pt-icon { font-size: 26px; }
+.pos-tile .pt-photo { position: relative; height: 88px; border-radius: 10px; overflow: hidden; background: var(--bg); }
+.pos-tile .pt-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pos-tile .pt-photo .pt-stock-badge { position: absolute; top: 6px; right: 6px; box-shadow: 0 1px 4px rgba(15, 23, 42, .28); }
 
 .pos-cart { background: var(--surface); border: 1px solid var(--border-soft); border-radius: var(--radius); display: flex; flex-direction: column; box-shadow: var(--shadow-sm); height: 100%; overflow: hidden; }
 .pos-cart-head { padding: 1rem; border-bottom: 1px solid var(--border-soft); display: flex; align-items: center; gap: .6rem; }
@@ -393,6 +430,22 @@ html[dir="rtl"] .input-group input.form-control-lg { border-radius: 12px 0 0 12p
 html[dir="rtl"] .text-start { text-align: right !important; }
 
 
+/* ---- settings sectioned layout ---- */
+.settings-layout { display: flex; gap: 20px; align-items: flex-start; }
+.settings-nav { width: 220px; flex-shrink: 0; position: sticky; top: 90px; padding: 8px; }
+.settings-nav-btn { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; background: transparent; border-radius: 10px; padding: 9px 12px; text-align: start; font-size: 13px; font-weight: 600; color: #334155; transition: background .15s, color .15s; margin-bottom: 2px; }
+.settings-nav-btn:hover { background: #f1f5f9; }
+.settings-nav-btn.active { background: #2563eb; color: #fff; box-shadow: 0 6px 14px rgba(37, 99, 235, .22); }
+.settings-nav-btn.active i { color: #fff; }
+.settings-nav-drop { display: block; margin-bottom: 14px; width: 100%; }
+.settings-main { flex: 1; min-width: 0; }
+.settings-main .card { width: 100%; }
+html[dir="rtl"] .settings-nav-btn { text-align: right; }
+@media (max-width: 991px) {
+  .settings-layout { flex-direction: column; }
+  .settings-nav { display: none; }
+}
+
 /* ---- cash register gate ---- */
 .pos-register-gate { position: absolute; inset: 0; z-index: 20; background: #f1f5f9; display: flex; align-items: center; justify-content: center; padding: 24px; border-radius: 16px; }
 .reg-gate-card { width: 100%; max-width: 460px; border: 0; box-shadow: 0 20px 45px rgba(15, 23, 42, .12); }
@@ -402,20 +455,69 @@ html[dir="rtl"] .pos-register-gate { direction: rtl; text-align: right; }
 
 /* ---- reports layout ---- */
 .reports-layout { display: flex; gap: 20px; align-items: flex-start; }
-.report-list { width: 260px; flex-shrink: 0; position: sticky; top: 90px; }
-#reportList { overflow: auto; max-height: calc(100vh - 200px); }
-.report-group { margin-bottom: 6px; }
-.report-group-label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: #64748b; font-weight: 700; padding: 8px 10px 4px; }
+.report-list { width: 260px; flex-shrink: 0; position: sticky; top: 90px; overflow: hidden; }
+.report-list-search { padding: 10px 10px 8px; border-bottom: 1px solid #e2e8f0; margin-bottom: 4px; }
+.report-list-search .input-group-text-soft { background: #f1f5f9; color: #64748b; border-color: #e2e8f0; }
+#reportList { overflow: visible; }
+.report-group { margin-bottom: 4px; }
+.report-group-label { display: flex; align-items: center; justify-content: space-between; width: 100%; border: 0; background: transparent; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: #64748b; font-weight: 700; padding: 7px 10px; border-radius: 8px; cursor: pointer; text-align: start; transition: background .15s, color .15s; }
+.report-group-label:hover { background: #f1f5f9; color: #1e293b; }
+.report-group-meta { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+.report-group-count { background: #e2e8f0; color: #475569; border-radius: 999px; padding: 0 7px; font-size: 10px; line-height: 16px; font-weight: 700; }
+.report-group-chev { font-size: 10px; transition: transform .2s; color: #94a3b8; }
+.report-group.open .report-group-chev { transform: rotate(180deg); }
+.report-group-body { display: none; }
+.report-group.open .report-group-body { display: block; }
+html[dir="rtl"] .report-group-label { text-align: right; }
 .report-btn { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; background: transparent; border-radius: 10px; padding: 8px 10px; text-align: start; font-size: 13px; font-weight: 600; color: #334155; transition: background .15s, color .15s; }
 .report-btn:hover { background: #f1f5f9; }
 .report-btn.active { background: #2563eb; color: #fff; box-shadow: 0 6px 14px rgba(37, 99, 235, .22); }
 .report-btn.active i { color: #fff; }
+.report-btn.active i.report-btn-tick { margin-left: auto; font-size: 12px; color: #bfdbfe; }
+.report-none { font-size: 13px; }
 .report-view { flex: 1; min-width: 0; }
 .report-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
 .report-stat { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px 16px; }
 .alert-soft { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; border-radius: 10px; }
 html[dir="rtl"] .report-btn { text-align: right; }
+html[dir="rtl"] .report-btn.active i.report-btn-tick { margin-left: 0; margin-right: auto; }
 @media (max-width: 991px) {
   .reports-layout { flex-direction: column; }
   .report-list { width: 100%; position: static; }
+}
+
+/* ---------- Super Admin / multi-business ---------- */
+
+/* Banner telling a super admin whose books they are looking at. It exists because
+   every number on every page changes when a business is entered, and a silent
+   switch would make that a trap rather than a feature. */
+.tenant-banner {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 1.5rem;
+  background: #1e3a8a; color: #fff; font-size: 13px;
+  border-bottom: 1px solid #1e40af;
+}
+.tenant-banner strong { font-weight: 700; }
+.tenant-banner .btn { font-weight: 600; font-size: 12.5px; }
+.tenant-banner-all { background: #334155; border-bottom-color: #475569; }
+
+.biz-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+
+/* Counts inside the Super Admin table: deliberately compact, full detail is in
+   the users modal rather than crammed into a column nobody reads. */
+.sa-counts { display: flex; flex-wrap: wrap; gap: 4px; }
+.sa-counts .badge { font-weight: 600; }
+
+.sa-detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.sa-detail { background: #f8fafc; border: 1px solid var(--border-soft); border-radius: 10px; padding: 8px 10px; }
+.sa-detail .n { font-weight: 700; font-size: 15px; }
+.sa-detail .l { color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+
+/* A business holding records cannot be deleted; saying why on the row beats a
+   disabled button the user cannot interpret. */
+.sa-delete-blocked { cursor: not-allowed; }
+
+@media (max-width: 767px) {
+  .tenant-banner { flex-wrap: wrap; padding: 10px 1rem; }
+  .tenant-banner .ms-auto { margin-left: 0 !important; width: 100%; }
 }

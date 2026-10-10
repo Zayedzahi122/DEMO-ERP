@@ -37,6 +37,9 @@ public class AuthController {
         me.put("email", user.getEmail());
         me.put("phone", user.getPhone());
         me.put("branch", user.getBranch());
+        me.put("superAdmin", user.isSuperAdmin());
+        me.put("businessId", user.getBusinessId());
+        me.put("businessName", user.getBusiness() == null ? null : user.getBusiness().getName());
         me.put("modules", Arrays.stream((user.getModules() == null ? "" : user.getModules()).split(","))
                 .filter(m -> !m.isBlank()).toList());
         return me;

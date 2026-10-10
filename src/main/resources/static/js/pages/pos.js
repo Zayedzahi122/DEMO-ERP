@@ -53,7 +53,7 @@ window.PAGE = {
           '<div class="pos-cart-totals">' +
             '<div class="row-line"><span>Subtotal</span><span class="fw-semibold text-dark" id="tSub">' + money(0) + '</span></div>' +
             '<div class="row-line"><span>Discount</span><span><input class="form-control form-control-sm text-end" style="width:110px;display:inline-block" type="number" min="0" step="0.001" id="tDiscount" value="0"></span></div>' +
-            '<div class="row-line"><span>VAT (' + EDY.vat.pct() + '%)</span><span class="fw-semibold text-dark" id="tTax">' + money(0) + '</span></div>' +
+            (EDY.vat.on() ? '<div class="row-line"><span>' + esc(EDY.vat.label()) + '</span><span class="fw-semibold text-dark" id="tTax">' + money(0) + '</span></div>' : '') +
             '<div class="row-line grand"><span>Grand Total</span><span class="text-primary" id="tGrand">' + money(0) + '</span></div>' +
             '<hr class="my-2">' +
             '<label class="form-label">Customer</label>' +
@@ -173,20 +173,34 @@ window.PAGE = {
 
     /* ---------- rendering ---------- */
     let filterQ = '', filterCat = '';
+
+    /** The uploaded product photo as a data URL, or '' when none exists. */
+    function productImage(p) {
+      return (p && p.image && String(p.image).indexOf('data:image/') === 0) ? esc(p.image) : '';
+    }
+    function stockCls(p) {
+      return p.quantityInStock <= (p.reorderLevel || 0) ? 'bg-soft-amber' : 'bg-soft-green';
+    }
+
     function renderTiles() {
       const q = filterQ.toLowerCase();
       const list = products.filter(p =>
         (!filterCat || (p.category && p.category.name === filterCat)) &&
         (!q || (p.name + ' ' + (p.sku || '') + ' ' + (p.barcode || '')).toLowerCase().includes(q)));
       const host = document.getElementById('posTiles');
-      host.innerHTML = list.length ? list.map(p =>
-        '<div class="card pos-tile p-2" data-id="' + p.id + '">' +
-        '<div class="d-flex justify-content-between align-items-start"><div class="pt-icon"><i class="bi bi-box-seam text-primary"></i></div>' +
-        '<span class="badge ' + (p.quantityInStock <= (p.reorderLevel || 0) ? 'bg-soft-amber' : 'bg-soft-green') + '">' + p.quantityInStock + '</span></div>' +
+      host.innerHTML = list.length ? list.map(p => {
+        const img = productImage(p);
+        return '<div class="card pos-tile p-2" data-id="' + p.id + '">' +
+        (img
+          ? '<div class="pt-photo"><img src="' + img + '" alt="' + esc(p.name) + '">' +
+            '<span class="badge ' + stockCls(p) + ' pt-stock-badge">' + p.quantityInStock + '</span></div>'
+          : '<div class="d-flex justify-content-between align-items-start"><div class="pt-icon"><i class="bi bi-box-seam text-primary"></i></div>' +
+            '<span class="badge ' + stockCls(p) + '">' + p.quantityInStock + '</span></div>') +
         '<div class="pt-name mt-2">' + esc(p.name) + '</div>' +
         '<div class="muted fs-11">' + esc(p.sku || '') + '</div>' +
         '<div class="pt-price fs-15 mt-1">' + money(p.unitPrice) + '</div>' +
-        '</div>').join('')
+        '</div>';
+      }).join('')
         : '<div class="empty-state" style="grid-column:1/-1"><i class="bi bi-search"></i><h6 class="mt-2">No products found</h6></div>';
       host.querySelectorAll('.pos-tile').forEach(t => t.addEventListener('click', () => addItem(Number(t.dataset.id))));
     }
@@ -221,8 +235,8 @@ window.PAGE = {
       const subtotal = cart.reduce((s, c) => s + Number(c.product.unitPrice || 0) * c.qty, 0);
       const disc = Math.min(Number(document.getElementById('tDiscount').value || 0), subtotal);
       const taxable = subtotal - disc;
-      const tax = taxable * EDY.vat.rate();
-      return { subtotal, discount: disc, tax, computed: taxable + tax, grand: taxable + tax };
+      const s = EDY.vat.split(taxable);
+      return { subtotal, discount: disc, tax: s.tax, computed: s.total, grand: s.total };
     }
 
     /* ---------- split payment ---------- */
@@ -280,9 +294,10 @@ window.PAGE = {
     function renderCart() {
       const host = document.getElementById('cartItems');
       document.getElementById('cartCount').textContent = cart.reduce((s, c) => s + c.qty, 0) + ' item' + (cart.reduce((s, c) => s + c.qty, 0) === 1 ? '' : 's');
-      host.innerHTML = cart.length ? cart.map(c =>
-        '<div class="cart-item">' +
-        '<div class="product-thumb" style="width:36px;height:36px;font-size:16px"><i class="bi bi-box2"></i></div>' +
+      host.innerHTML = cart.length ? cart.map(c => {
+        const img = productImage(c.product);
+        return '<div class="cart-item">' +
+        '<div class="product-thumb" style="width:36px;height:36px;font-size:16px">' + (img ? '<img src="' + img + '" alt="">' : '<i class="bi bi-box2"></i>') + '</div>' +
         '<div class="flex-grow-1"><div class="fs-13 fw-bold">' + esc(c.product.name) + '</div>' +
         '<div class="muted fs-12">' + money(c.product.unitPrice) + '</div></div>' +
         '<div class="qty-control">' +
@@ -291,7 +306,8 @@ window.PAGE = {
         '<button data-id="' + c.product.id + '" data-d="1">+</button></div>' +
         '<div class="ci-price" style="min-width:78px;text-align:right">' + money(Number(c.product.unitPrice) * c.qty) + '</div>' +
         '<button class="btn btn-ghost btn-icon" data-rm="' + c.product.id + '"><i class="bi bi-trash text-danger"></i></button>' +
-        '</div>').join('')
+        '</div>';
+      }).join('')
         : '<div class="empty-state py-5"><i class="bi bi-bag"></i><h6 class="mt-2">Cart is empty</h6><div class="fs-13">Click a product to add it</div></div>';
 
       host.querySelectorAll('.qty-control button').forEach(b => b.addEventListener('click', () => changeQty(Number(b.dataset.id), Number(b.dataset.d))));
@@ -299,7 +315,8 @@ window.PAGE = {
 
       const t = cartTotals();
       document.getElementById('tSub').textContent = money(t.subtotal);
-      document.getElementById('tTax').textContent = money(t.tax);
+      const taxEl = document.getElementById('tTax');
+      if (taxEl) taxEl.textContent = money(t.tax);
       document.getElementById('tGrand').textContent = money(t.grand);
       document.getElementById('tGrand').className = 'text-primary';
       if (typeof renderSplit === 'function') renderSplitTotalsOnly();
@@ -421,6 +438,8 @@ window.PAGE = {
         items: cart.map(c => ({ productId: c.product.id, quantity: c.qty, unitPrice: c.product.unitPrice })),
         discount: t.discount ? t.discount : undefined,
         paymentMethod,
+        // Where this sale is happening: the location picked in the top bar.
+        location: (window.EDY.layout ? EDY.layout.branch() : (localStorage.getItem('edy.branch') || 'Main Branch')),
         payments
         // the total is always the computed one; status is derived server-side
         // from amountPaid vs total, so a part payment is stored as a Due sale
@@ -458,7 +477,9 @@ window.PAGE = {
       const ci = lines.reduce((s, c) => s + c.qty, 0);
       body.innerHTML =
         '<div class="invoice-print" id="printArea">' +
-        '<div class="text-center mb-3"><div class="fw-bold fs-5">EDY ERP</div><div class="muted fs-13">Main Branch \u2013 Muscat, Oman &middot; VAT: OM 1234567</div>' +
+        '<div class="text-center mb-3"><div class="fw-bold fs-5">' + esc(EDY.settings['biz.name'] || 'EDY ERP') + '</div><div class="muted fs-13">' +
+        esc([EDY.settings['biz.address'] || '', EDY.settings['biz.vatNo'] ? 'VAT: ' + EDY.settings['biz.vatNo'] : ''].filter(Boolean).join(' \u00b7 ') || ' ') +
+        '</div>' +
         '<div class="muted fs-13">' + EDY.fmt.datetime(new Date()) + '</div></div>' +
         '<hr>' +
         '<div class="d-flex justify-content-between fs-13 mb-2"><span class="muted">Invoice No</span><span class="fw-bold">' + esc(inv.invoiceNumber) + '</span></div>' +
@@ -472,7 +493,11 @@ window.PAGE = {
         '<div class="d-flex justify-content-between fs-13"><span class="muted">Items</span><span>' + ci + '</span></div>' +
         '<div class="d-flex justify-content-between fs-13"><span class="muted">Subtotal</span><span>' + money(inv.subtotal) + '</span></div>' +
         '<div class="d-flex justify-content-between fs-13"><span class="muted">Discount</span><span>' + money(inv.discount || 0) + '</span></div>' +
-        '<div class="d-flex justify-content-between fs-13"><span class="muted">VAT (' + EDY.vat.pct() + '%)</span><span>' + money(inv.taxAmount) + '</span></div>' +
+        /* A saved invoice shows its own stored tax, never today's rate - the rate may
+           have changed since it was written. A zero tax line is hidden. */
+        (Number(inv.taxAmount) > 0
+          ? '<div class="d-flex justify-content-between fs-13"><span class="muted">VAT</span><span>' + money(inv.taxAmount) + '</span></div>'
+          : '') +
         '<div class="d-flex justify-content-between fs-5 fw-bold mt-1 border-top pt-2"><span>Total</span><span>' + money(inv.totalAmount) + '</span></div>' +
         ((inv.payments && inv.payments.length)
           ? (inv.payments || []).map(p => '<div class="d-flex justify-content-between fs-13"><span class="muted">Paid (' + esc(payMap[p.method] || p.method) + ')</span><span>' + money(p.amount) + '</span></div>').join('') +
@@ -484,13 +509,20 @@ window.PAGE = {
         '</div>';
     }
 
+    /**
+     * The receipt is already on screen behind the dialog, so the preview shows that
+     * exact markup rather than a second, independently built document that could
+     * disagree with it. Printing straight into a new window left the cashier with
+     * no sight of what the customer was about to be handed.
+     */
     document.getElementById('btnPrint').addEventListener('click', () => {
       const area = document.getElementById('printArea');
-      const newWin = window.open('', '_blank', 'width=560,height=760');
-      if (newWin) {
-        newWin.document.write('<html><head><title>Receipt</title><link rel="stylesheet" href="/css/style.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"></head><body>' + area.outerHTML + '<script>window.onload=function(){window.print()}<\/script></body></html>');
-        newWin.document.close();
-      }
+      if (!area) return;
+      EDY.print.preview({
+        title: 'Receipt',
+        subtitle: EDY.settings['biz.name'] || 'Sales receipt',
+        html: '<div class="app-print">' + area.outerHTML + '</div>'
+      });
     });
     document.getElementById('btnNewSale').addEventListener('click', () => bootstrap.Modal.getInstance(modal).hide());
 
